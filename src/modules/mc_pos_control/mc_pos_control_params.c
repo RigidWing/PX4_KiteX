@@ -39,6 +39,85 @@
  */
 
 /**
+* Angles to C. Phi is relative to the X-axis, theta to the XY-plane, positive for negative z.
+* *
+* @group Multicopter Position Control
+*/
+
+PARAM_DEFINE_FLOAT(MPC_PHI_C, 0.0f);
+PARAM_DEFINE_FLOAT(MPC_THETA_C, 0.0f);
+
+/**
+ * Turning radius in the Pi-plane
+ * *
+ * @group Multicopter Position Control
+ */
+
+PARAM_DEFINE_FLOAT(MPC_LOOP_TURN_R, 0.0f);
+
+/**
+ * Length of the tether
+ * *
+ * @group Multicopter Position Control
+ */
+
+PARAM_DEFINE_FLOAT(MPC_TETHER_LEN, 100.0f);
+
+/**
+ * Coordinates of the position of B, the tether point
+ * *
+ * @group Multicopter Position Control
+ */
+
+PARAM_DEFINE_FLOAT(MPC_X_POS_B, 0.0f);
+PARAM_DEFINE_FLOAT(MPC_Y_POS_B, 0.0f);
+PARAM_DEFINE_FLOAT(MPC_Z_POS_B, 0.0f);
+
+/**
+ * Pitch Angle Hover
+ *
+ * The Pitch Angle while hovering with the tether
+ * stretched while in manual mode.
+ * in Radians.
+ *
+ * @unit radians
+ * @min -0.783
+ * @max 0.783
+ * @decimal 3
+ * @increment 0.001
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_PITCH_HVR, -0.174f);
+
+/**
+ * Tether Hover thrust
+ *
+ * Thrust in the direction from ground to the kite along the tether.
+ * This value is relative to the hover thrust.
+ *
+ * @unit norm
+ * @min 0.05
+ * @max 0.5
+ * @decimal 2
+ * @increment 0.01
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_THR_TETHER, 0.2f);
+
+/**
+ * Enable Tethered Position Control
+ *
+ * @min 0
+ * @max 1
+ * @value 0 standard 3D position flight
+ * @value 1 Sphere following
+ * @decimal 1
+ * @increment 0.1
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_TET_POS_CTL, 0);
+
+/**
  * Minimum thrust in auto thrust control
  *
  * It's recommended to set it > 0 to avoid free fall with zero thrust.

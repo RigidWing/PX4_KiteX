@@ -146,6 +146,9 @@ MultirotorMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handl
 	} else if (!strcmp(geomname, "4x")) {
 		geometry = MultirotorGeometry::QUAD_X;
 
+	} else if (!strcmp(geomname, "4kitex")) {
+		geometry = MultirotorGeometry::QUAD_KITE_X;
+
 	} else if (!strcmp(geomname, "4h")) {
 		geometry = MultirotorGeometry::QUAD_H;
 

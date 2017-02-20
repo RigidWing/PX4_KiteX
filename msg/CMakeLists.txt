@@ -57,6 +57,7 @@ set(msg_file_names
 	fence_vertex.msg
 	filtered_bottom_flow.msg
 	follow_target.msg
+	fw_turning.msg
 	fw_pos_ctrl_status.msg
 	fw_virtual_attitude_setpoint.msg
 	fw_virtual_rates_setpoint.msg
@@ -126,6 +127,7 @@ set(msg_file_names
 	vehicle_status_flags.msg
 	vtol_vehicle_status.msg
 	wind_estimate.msg
+	gps_pos_b.msg
 	)
 
 # Get absolute paths

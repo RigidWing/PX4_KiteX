@@ -478,6 +478,11 @@ public:
 			       data[0] * v.data[1] - data[1] * v.data[0]
 		       );
 	}
+
+	// KiteX: cross product in the plane
+	float operator %(const Vector<2> &v) const {
+		return data[0] * v.data[1] - data[1] * v.data[0];
+	}
 };
 
 template <>

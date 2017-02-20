@@ -141,6 +141,9 @@ VtolAttitudeControl::VtolAttitudeControl() :
 	if (_params.vtol_type == vtol_type::TAILSITTER) {
 		_vtol_type = new Tailsitter(this);
 
+	} else if (_params.vtol_type == vtol_type::KITE) {
+		_vtol_type = new Kite(this);
+
 	} else if (_params.vtol_type == vtol_type::TILTROTOR) {
 		_vtol_type = new Tiltrotor(this);
 
@@ -507,6 +510,33 @@ VtolAttitudeControl::abort_front_transition(const char *reason)
 }
 
 /**
+* Do poll
+*/
+void
+VtolAttitudeControl::do_poll(){
+	mc_virtual_att_sp_poll();
+	fw_virtual_att_sp_poll();
+	vehicle_control_mode_poll();	//Check for changes in vehicle control mode.
+	vehicle_manual_poll();			//Check for changes in manual inputs.
+	arming_status_poll();			//Check for arming status updates.
+	vehicle_attitude_setpoint_poll();//Check for changes in attitude set points
+	vehicle_attitude_poll();		//Check for changes in attitude
+	actuator_controls_mc_poll();	//Check for changes in mc_attitude_control output
+	actuator_controls_fw_poll();	//Check for changes in fw_attitude_control output
+	vehicle_rates_sp_mc_poll();
+	vehicle_rates_sp_fw_poll();
+	parameters_update_poll();
+	vehicle_local_pos_poll();			// Check for new sensor values
+	vehicle_airspeed_poll();
+	vehicle_battery_poll();
+	vehicle_cmd_poll();
+	tecs_status_poll();
+	land_detected_poll();
+
+}
+
+
+/**
 * Update parameters.
 */
 int
@@ -617,6 +647,16 @@ void VtolAttitudeControl::publish_att_sp()
 	}
 }
 
+void VtolAttitudeControl::publish_rates_sp()
+{
+	// publish the attitude rates setpoint
+	if (_v_rates_sp_pub != nullptr) {
+		orb_publish(ORB_ID(vehicle_rates_setpoint), _v_rates_sp_pub, &_v_rates_sp);
+	} else { 		/* advertise and publish */
+		_v_rates_sp_pub = orb_advertise(ORB_ID(vehicle_rates_setpoint), &_v_rates_sp);
+	}
+}
+
 void
 VtolAttitudeControl::task_main_trampoline(int argc, char *argv[])
 {
@@ -706,24 +746,7 @@ void VtolAttitudeControl::task_main()
 
 		_vtol_vehicle_status.fw_permanent_stab = _params.vtol_fw_permanent_stab == 1 ? true : false;
 
-		mc_virtual_att_sp_poll();
-		fw_virtual_att_sp_poll();
-		vehicle_control_mode_poll();	//Check for changes in vehicle control mode.
-		vehicle_manual_poll();			//Check for changes in manual inputs.
-		arming_status_poll();			//Check for arming status updates.
-		vehicle_attitude_setpoint_poll();//Check for changes in attitude set points
-		vehicle_attitude_poll();		//Check for changes in attitude
-		actuator_controls_mc_poll();	//Check for changes in mc_attitude_control output
-		actuator_controls_fw_poll();	//Check for changes in fw_attitude_control output
-		vehicle_rates_sp_mc_poll();
-		vehicle_rates_sp_fw_poll();
-		parameters_update_poll();
-		vehicle_local_pos_poll();			// Check for new sensor values
-		vehicle_airspeed_poll();
-		vehicle_battery_poll();
-		vehicle_cmd_poll();
-		tecs_status_poll();
-		land_detected_poll();
+		do_poll();
 
 		// update the vtol state machine which decides which mode we are in
 		_vtol_type->update_vtol_state();
@@ -767,17 +790,14 @@ void VtolAttitudeControl::task_main()
 			// got data from fw attitude controller
 			if (fds[1].revents & POLLIN) {
 				orb_copy(ORB_ID(actuator_controls_virtual_fw), _actuator_inputs_fw, &_actuators_fw_in);
-				vehicle_manual_poll();
-
 				_vtol_type->update_fw_state();
-
 				fill_fw_att_rates_sp();
 			}
 
 		} else if (_vtol_type->get_mode() == TRANSITION_TO_MC || _vtol_type->get_mode() == TRANSITION_TO_FW) {
 			// vehicle is doing a transition
 			_vtol_vehicle_status.vtol_in_trans_mode = true;
-			_vtol_vehicle_status.vtol_in_rw_mode = true; //making mc attitude controller work during transition
+			_vtol_vehicle_status.vtol_in_rw_mode = true; //making mc attitude controller work during transition //TODO really?
 			_vtol_vehicle_status.in_transition_to_fw = (_vtol_type->get_mode() == TRANSITION_TO_FW);
 
 			bool got_new_data = false;
@@ -803,7 +823,10 @@ void VtolAttitudeControl::task_main()
 			_vtol_type->update_external_state();
 		}
 
+
+		/* Publish */
 		publish_att_sp();
+		publish_rates_sp();
 		_vtol_type->fill_actuator_outputs();
 
 		/* Only publish if the proper mode(s) are enabled */
@@ -823,14 +846,6 @@ void VtolAttitudeControl::task_main()
 			} else {
 				_actuators_1_pub = orb_advertise(ORB_ID(actuator_controls_1), &_actuators_out_1);
 			}
-		}
-
-		// publish the attitude rates setpoint
-		if (_v_rates_sp_pub != nullptr) {
-			orb_publish(ORB_ID(vehicle_rates_setpoint), _v_rates_sp_pub, &_v_rates_sp);
-
-		} else {
-			_v_rates_sp_pub = orb_advertise(ORB_ID(vehicle_rates_setpoint), &_v_rates_sp);
 		}
 	}
 

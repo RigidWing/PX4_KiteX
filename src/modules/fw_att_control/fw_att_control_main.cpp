@@ -58,12 +58,14 @@
 #include <uORB/topics/actuator_controls.h>
 #include <uORB/topics/battery_status.h>
 #include <uORB/topics/control_state.h>
+#include <uORB/topics/fw_turning.h>  // kitex
 #include <uORB/topics/fw_virtual_attitude_setpoint.h>
 #include <uORB/topics/fw_virtual_rates_setpoint.h>
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/vehicle_attitude_setpoint.h>
 #include <uORB/topics/vehicle_control_mode.h>
+#include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/vehicle_global_position.h>
 #include <uORB/topics/vehicle_land_detected.h>
 #include <uORB/topics/vehicle_rates_setpoint.h>
@@ -72,6 +74,9 @@
 
 using matrix::Eulerf;
 using matrix::Quatf;
+
+#define _USE_MATH_DEFINES
+
 
 /**
  * Fixedwing attitude control app start / stop handling function
@@ -117,6 +122,7 @@ private:
 	int		_battery_status_sub;		/**< battery status subscription */
 	int		_ctrl_state_sub;		/**< control state subscription */
 	int		_global_pos_sub;		/**< global position subscription */
+	int		_local_pos_sub;			/**< vehicle local position */
 	int		_manual_sub;			/**< notification of manual control updates */
 	int		_params_sub;			/**< notification of parameter updates */
 	int		_vcontrol_mode_sub;		/**< vehicle status subscription */
@@ -127,10 +133,12 @@ private:
 	orb_advert_t	_attitude_sp_pub;		/**< attitude setpoint point */
 	orb_advert_t	_actuators_0_pub;		/**< actuator control group 0 setpoint */
 	orb_advert_t	_actuators_2_pub;		/**< actuator control group 1 setpoint (Airframe) */
+	orb_advert_t	_fw_turning_sp_pub; // kitex
 
 	orb_id_t _rates_sp_id;	// pointer to correct rates setpoint uORB metadata structure
 	orb_id_t _actuators_id;	// pointer to correct actuator controls0 uORB metadata structure
 	orb_id_t _attitude_setpoint_id;
+	orb_id_t _fw_turning_sp_id;  // kitex
 
 	struct actuator_controls_s			_actuators;		/**< actuator control inputs */
 	struct actuator_controls_s			_actuators_airframe;	/**< actuator control inputs */
@@ -139,10 +147,12 @@ private:
 	struct manual_control_setpoint_s		_manual;		/**< r/c channel data */
 	struct vehicle_attitude_setpoint_s		_att_sp;		/**< vehicle attitude setpoint */
 	struct vehicle_control_mode_s			_vcontrol_mode;		/**< vehicle control mode */
+	struct vehicle_local_position_s			_local_pos;		/**< vehicle local position */
 	struct vehicle_global_position_s		_global_pos;		/**< global position */
 	struct vehicle_land_detected_s			_vehicle_land_detected;	/**< vehicle land detected */
 	struct vehicle_rates_setpoint_s			_rates_sp;	/* attitude rates setpoint */
 	struct vehicle_status_s				_vehicle_status;	/**< vehicle status */
+	struct fw_turning_s _fw_turning_sp; // kitex
 
 	perf_counter_t	_loop_perf;			/**< loop performance counter */
 	perf_counter_t	_nonfinite_input_perf;		/**< performance counter for non finite input */
@@ -156,6 +166,18 @@ private:
 
 
 	struct {
+		// path following
+		math::Vector<3> pos_c;
+		math::Vector<3> e_pi_x;
+		math::Vector<3> e_pi_y;
+
+		math::Vector<3> pos_b;
+
+		float phiC;
+		float thetaC;
+		float turning_radius;
+		// float tether_len;
+
 		float p_tc;
 		float p_p;
 		float p_i;
@@ -216,6 +238,13 @@ private:
 	}		_parameters;			/**< local copies of interesting parameters */
 
 	struct {
+		param_t phiC;
+		param_t thetaC;
+		param_t turning_radius;
+		// param_t tether_len;
+		param_t x_pos_b;
+		param_t y_pos_b;
+		param_t z_pos_b;
 
 		param_t p_tc;
 		param_t p_p;
@@ -274,6 +303,19 @@ private:
 
 	}		_parameter_handles;		/**< handles for interesting parameters */
 
+	math::Vector<3> _pos; // KiteX: local position
+	math::Vector<3> _vel; // KiteX: local position
+
+	float _pi_path_x[60]; // KiteX: x-coords of path points
+	float _pi_path_y[60]; // KiteX: y-coords of path points
+	int _pi_path_i = 0; // KiteX: Path of kite in Pi plane
+
+	math::Vector<2> _pos_pi; // KiteX: Projected position in Pi
+	math::Vector<2> _vel_pi; // KiteX: Projected velocity vector in Pi
+	math::Vector<2> _target_point_pi; // KiteX: Target point on path
+	float _arc_radius = 100000000.0f; // KiteX: Radius of path
+	float _arc_roll_rate = 0.0f; // KiteX: Yaw rate to reach path
+
 	// Rotation matrix and euler angles to extract from control state
 	math::Matrix<3, 3> _R;
 	float _roll;
@@ -284,6 +326,23 @@ private:
 	ECL_PitchController				_pitch_ctrl;
 	ECL_YawController				_yaw_ctrl;
 	ECL_WheelController			_wheel_ctrl;
+
+
+	// KiteX
+void update_pi(float phi, float theta);
+void update_pi_path(float radius);
+void update_pi_projection();
+void update_pi_target_point(float search_radius);
+void update_pi_arc();
+void update_pi_roll_rate();
+// void publishTurning();
+
+void control_looping(float dt);
+
+
+// KiteX pure helpers
+float signed_angle(const math::Vector<2> &left, const math::Vector<2> &right);
+float square_distance_to_path(const int path_i);
 
 
 	/**
@@ -311,6 +370,11 @@ private:
 	 * Check for set triplet updates.
 	 */
 	void		vehicle_setpoint_poll();
+
+	/**
+	 * Check for global position updates.
+	 */
+	void		local_pos_poll();
 
 	/**
 	 * Check for global position updates.
@@ -375,6 +439,7 @@ FixedwingAttitudeControl::FixedwingAttitudeControl() :
 	_rates_sp_id(nullptr),
 	_actuators_id(nullptr),
 	_attitude_setpoint_id(nullptr),
+	_fw_turning_sp_id(nullptr),
 
 	/* performance counters */
 	_loop_perf(perf_alloc(PC_ELAPSED, "fwa_dt")),
@@ -406,6 +471,24 @@ FixedwingAttitudeControl::FixedwingAttitudeControl() :
 	_vcontrol_mode = {};
 	_vehicle_land_detected = {};
 	_vehicle_status = {};
+	_fw_turning_sp = {};
+
+	_vel_pi.zero();
+	_pos_pi.zero();
+
+	_parameters.pos_c.zero(); // is this needed
+	_parameters.e_pi_x.zero();
+	_parameters.e_pi_y.zero();
+
+	_parameter_handles.phiC						= param_find("MPC_PHI_C");
+	_parameter_handles.thetaC				 	= param_find("MPC_THETA_C");
+	_parameter_handles.turning_radius	= param_find("MPC_LOOP_TURN_R");
+
+	_parameter_handles.x_pos_b		= param_find("MPC_X_POS_B");
+	_parameter_handles.y_pos_b		= param_find("MPC_Y_POS_B");
+	_parameter_handles.z_pos_b		= param_find("MPC_Z_POS_B");
+
+	// _parameter_handles.tether_len	= param_find("MPC_TETHER_LEN");
 
 	_parameter_handles.p_tc = param_find("FW_P_TC");
 	_parameter_handles.p_p = param_find("FW_PR_P");
@@ -504,6 +587,21 @@ int
 FixedwingAttitudeControl::parameters_update()
 {
 
+	/* KiteX: Controlling C for looping */
+	param_get(_parameter_handles.phiC, &_parameters.phiC);
+	param_get(_parameter_handles.thetaC, &_parameters.thetaC);
+	param_get(_parameter_handles.turning_radius, &_parameters.turning_radius);
+
+	// param_get(_parameter_handles.tether_len, &_parameters.tether_len);
+
+	float v;
+	param_get(_parameter_handles.x_pos_b, &v);
+	_parameters.pos_b(0) = v;
+	param_get(_parameter_handles.y_pos_b, &v);
+	_parameters.pos_b(1) = v;
+	param_get(_parameter_handles.z_pos_b, &v);
+	_parameters.pos_b(2) = v;
+
 	param_get(_parameter_handles.p_tc, &(_parameters.p_tc));
 	param_get(_parameter_handles.p_p, &(_parameters.p_p));
 	param_get(_parameter_handles.p_i, &(_parameters.p_i));
@@ -569,6 +667,18 @@ FixedwingAttitudeControl::parameters_update()
 	param_get(_parameter_handles.vtol_type, &_parameters.vtol_type);
 
 	param_get(_parameter_handles.bat_scale_en, &_parameters.bat_scale_en);
+
+	/* KiteX calculate C - not really needed */
+	//		float d	= calculate_d(_parameters.tether_len, _parameters.turning_radius);
+	//		_parameters.pos_c = calculate_vector(_parameters.phiC, _parameters.thetaC, d) + _parameters.pos_b;
+
+	//		_parameters.e_pi_x = calculate_e_pi_x(_parameters.phiC, _parameters.thetaC);
+	//		_parameters.e_pi_y = calculate_e_pi_y(_parameters.phiC, _parameters.thetaC);
+
+	// KiteX: Update projection plane and path
+	update_pi(_parameters.phiC, _parameters.thetaC);
+	update_pi_path(_parameters.turning_radius);
+
 
 	/* pitch control parameters */
 	_pitch_ctrl.set_time_constant(_parameters.p_tc);
@@ -648,6 +758,26 @@ FixedwingAttitudeControl::vehicle_setpoint_poll()
 }
 
 void
+FixedwingAttitudeControl::local_pos_poll()
+{
+	bool updated;
+	orb_check(_local_pos_sub, &updated);
+
+	if (updated) {
+		orb_copy(ORB_ID(vehicle_local_position), _local_pos_sub, &_local_pos);
+		_pos(0) = _local_pos.x;
+		_pos(1) = _local_pos.y;
+		_pos(2) = _local_pos.z;
+		_vel(0) = _local_pos.vx;
+		_vel(1) = _local_pos.vy;
+		_vel(2) = _local_pos.vz;
+
+		// printf("posTimestamp: %llu, currentTime: %llu, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f\n", _local_pos.timestamp, hrt_absolute_time(), (double) _pos(0), (double) _pos(1), (double) _pos(2), (double) _vel(0), (double) _vel(1), (double) _vel(2));
+	}
+}
+
+
+void
 FixedwingAttitudeControl::global_pos_poll()
 {
 	/* check if there is a new global position */
@@ -681,6 +811,7 @@ FixedwingAttitudeControl::vehicle_status_poll()
 				_actuators_id = ORB_ID(actuator_controls_0);
 				_attitude_setpoint_id = ORB_ID(vehicle_attitude_setpoint);
 			}
+			_fw_turning_sp_id = ORB_ID(fw_turning);
 		}
 	}
 }
@@ -709,6 +840,17 @@ FixedwingAttitudeControl::battery_status_poll()
 	}
 }
 
+// KiteX: This is run when in a loop
+void FixedwingAttitudeControl::control_looping(float dt)
+{
+	update_pi_projection();
+	update_pi_target_point(0.8f * _parameters.turning_radius);
+	update_pi_arc();
+	update_pi_roll_rate();
+	// publishTurning();
+	// printf("_arc_radius: %.3f \n", (double) _arc_radius);
+}
+
 void
 FixedwingAttitudeControl::task_main_trampoline(int argc, char *argv[])
 {
@@ -726,6 +868,7 @@ FixedwingAttitudeControl::task_main()
 	_vcontrol_mode_sub = orb_subscribe(ORB_ID(vehicle_control_mode));
 	_params_sub = orb_subscribe(ORB_ID(parameter_update));
 	_manual_sub = orb_subscribe(ORB_ID(manual_control_setpoint));
+	_local_pos_sub = orb_subscribe(ORB_ID(vehicle_local_position));
 	_global_pos_sub = orb_subscribe(ORB_ID(vehicle_global_position));
 	_vehicle_status_sub = orb_subscribe(ORB_ID(vehicle_status));
 	_vehicle_land_detected_sub = orb_subscribe(ORB_ID(vehicle_land_detected));
@@ -792,6 +935,8 @@ FixedwingAttitudeControl::task_main()
 				deltaT = 0.01f;
 			}
 
+			control_looping(deltaT); // KiteX
+
 			/* load local copies */
 			orb_copy(ORB_ID(control_state), _ctrl_state_sub, &_ctrl_state);
 
@@ -806,58 +951,60 @@ FixedwingAttitudeControl::task_main()
 			_pitch   = euler_angles(1);
 			_yaw     = euler_angles(2);
 
-			if (_vehicle_status.is_vtol && _parameters.vtol_type == 0) {
-				/* vehicle is a tailsitter, we need to modify the estimated attitude for fw mode
-				 *
-				 * Since the VTOL airframe is initialized as a multicopter we need to
-				 * modify the estimated attitude for the fixed wing operation.
-				 * Since the neutral position of the vehicle in fixed wing mode is -90 degrees rotated around
-				 * the pitch axis compared to the neutral position of the vehicle in multicopter mode
-				 * we need to swap the roll and the yaw axis (1st and 3rd column) in the rotation matrix.
-				 * Additionally, in order to get the correct sign of the pitch, we need to multiply
-				 * the new x axis of the rotation matrix with -1
-				 *
-				 * original:			modified:
-				 *
-				 * Rxx  Ryx  Rzx		-Rzx  Ryx  Rxx
-				 * Rxy	Ryy  Rzy		-Rzy  Ryy  Rxy
-				 * Rxz	Ryz  Rzz		-Rzz  Ryz  Rxz
-				 * */
-				math::Matrix<3, 3> R_adapted = _R;		//modified rotation matrix
-
-				/* move z to x */
-				R_adapted(0, 0) = _R(0, 2);
-				R_adapted(1, 0) = _R(1, 2);
-				R_adapted(2, 0) = _R(2, 2);
-
-				/* move x to z */
-				R_adapted(0, 2) = _R(0, 0);
-				R_adapted(1, 2) = _R(1, 0);
-				R_adapted(2, 2) = _R(2, 0);
-
-				/* change direction of pitch (convert to right handed system) */
-				R_adapted(0, 0) = -R_adapted(0, 0);
-				R_adapted(1, 0) = -R_adapted(1, 0);
-				R_adapted(2, 0) = -R_adapted(2, 0);
-				euler_angles = R_adapted.to_euler();  //adapted euler angles for fixed wing operation
-
-				/* fill in new attitude data */
-				_R = R_adapted;
-				_roll    = euler_angles(0);
-				_pitch   = euler_angles(1);
-				_yaw     = euler_angles(2);
-
-				/* lastly, roll- and yawspeed have to be swaped */
-				float helper = _ctrl_state.roll_rate;
-				_ctrl_state.roll_rate = -_ctrl_state.yaw_rate;
-				_ctrl_state.yaw_rate = helper;
-			}
+			// if (_vehicle_status.is_vtol && _parameters.vtol_type == 0) {
+			// 	/* vehicle is a tailsitter, we need to modify the estimated attitude for fw mode
+			// 	 *
+			// 	 * Since the VTOL airframe is initialized as a multicopter we need to
+			// 	 * modify the estimated attitude for the fixed wing operation.
+			// 	 * Since the neutral position of the vehicle in fixed wing mode is -90 degrees rotated around
+			// 	 * the pitch axis compared to the neutral position of the vehicle in multicopter mode
+			// 	 * we need to swap the roll and the yaw axis (1st and 3rd column) in the rotation matrix.
+			// 	 * Additionally, in order to get the correct sign of the pitch, we need to multiply
+			// 	 * the new x axis of the rotation matrix with -1
+			// 	 *
+			// 	 * original:			modified:
+			// 	 *
+			// 	 * Rxx  Ryx  Rzx		-Rzx  Ryx  Rxx
+			// 	 * Rxy	Ryy  Rzy		-Rzy  Ryy  Rxy
+			// 	 * Rxz	Ryz  Rzz		-Rzz  Ryz  Rxz
+			// 	 * */
+			// 	math::Matrix<3, 3> R_adapted = _R;		//modified rotation matrix
+			//
+			// 	/* move z to x */
+			// 	R_adapted(0, 0) = _R(0, 2);
+			// 	R_adapted(1, 0) = _R(1, 2);
+			// 	R_adapted(2, 0) = _R(2, 2);
+			//
+			// 	/* move x to z */
+			// 	R_adapted(0, 2) = _R(0, 0);
+			// 	R_adapted(1, 2) = _R(1, 0);
+			// 	R_adapted(2, 2) = _R(2, 0);
+			//
+			// 	/* change direction of pitch (convert to right handed system) */
+			// 	R_adapted(0, 0) = -R_adapted(0, 0);
+			// 	R_adapted(1, 0) = -R_adapted(1, 0);
+			// 	R_adapted(2, 0) = -R_adapted(2, 0);
+			// 	euler_angles = R_adapted.to_euler();  //adapted euler angles for fixed wing operation
+			//
+			// 	/* fill in new attitude data */
+			// 	_R = R_adapted;
+			// 	_roll    = euler_angles(0);
+			// 	_pitch   = euler_angles(1);
+			// 	_yaw     = euler_angles(2);
+			//
+			// 	/* lastly, roll- and yawspeed have to be swaped */
+			// 	float helper = _ctrl_state.roll_rate;
+			// 	_ctrl_state.roll_rate = -_ctrl_state.yaw_rate;
+			// 	_ctrl_state.yaw_rate = helper;
+			// }
 
 			vehicle_setpoint_poll();
 
 			vehicle_control_mode_poll();
 
 			vehicle_manual_poll();
+
+			local_pos_poll();
 
 			global_pos_poll();
 
@@ -881,73 +1028,77 @@ FixedwingAttitudeControl::task_main()
 				lock_integrator = true;
 			}
 
-			/* Simple handling of failsafe: deploy parachute if failsafe is on */
-			if (_vcontrol_mode.flag_control_termination_enabled) {
-				_actuators_airframe.control[7] = 1.0f;
-				//warnx("_actuators_airframe.control[1] = 1.0f;");
+			// /* Simple handling of failsafe: deploy parachute if failsafe is on */
+			// if (_vcontrol_mode.flag_control_termination_enabled) {
+			// 	_actuators_airframe.control[7] = 1.0f;
+			// 	//warnx("_actuators_airframe.control[1] = 1.0f;");
+			//
+			// } else {
+			// 	_actuators_airframe.control[7] = 0.0f;
+			// 	//warnx("_actuators_airframe.control[1] = -1.0f;");
+			// }
 
-			} else {
-				_actuators_airframe.control[7] = 0.0f;
-				//warnx("_actuators_airframe.control[1] = -1.0f;");
-			}
+			// /* if we are in rotary wing mode, do nothing */
+			// if (_vehicle_status.is_rotary_wing && !_vehicle_status.is_vtol) {
+			// 	continue;
+			// }
 
-			/* if we are in rotary wing mode, do nothing */
-			if (_vehicle_status.is_rotary_wing && !_vehicle_status.is_vtol) {
-				continue;
-			}
+			// /* default flaps to center */
+			// float flap_control = 0.0f;
 
-			/* default flaps to center */
-			float flap_control = 0.0f;
+			// /* map flaps by default to manual if valid */
+			// if (PX4_ISFINITE(_manual.flaps) && _vcontrol_mode.flag_control_manual_enabled
+			//     && fabsf(_parameters.flaps_scale) > 0.01f) {
+			// 	flap_control = 0.5f * (_manual.flaps + 1.0f) * _parameters.flaps_scale;
+			//
+			// } else if (_vcontrol_mode.flag_control_auto_enabled
+			// 	   && fabsf(_parameters.flaps_scale) > 0.01f) {
+			// 	flap_control = _att_sp.apply_flaps ? 1.0f * _parameters.flaps_scale : 0.0f;
+			// }
+			//
+			// // move the actual control value continuous with time, full flap travel in 1sec
+			// if (fabsf(_flaps_applied - flap_control) > 0.01f) {
+			// 	_flaps_applied += (_flaps_applied - flap_control) < 0 ? deltaT : -deltaT;
+			//
+			// } else {
+			// 	_flaps_applied = flap_control;
+			// }
 
-			/* map flaps by default to manual if valid */
-			if (PX4_ISFINITE(_manual.flaps) && _vcontrol_mode.flag_control_manual_enabled
-			    && fabsf(_parameters.flaps_scale) > 0.01f) {
-				flap_control = 0.5f * (_manual.flaps + 1.0f) * _parameters.flaps_scale;
+			// /* default flaperon to center */
+			// float flaperon_control = 0.0f;
+			//
+			// /* map flaperons by default to manual if valid */
+			// if (PX4_ISFINITE(_manual.aux2) && _vcontrol_mode.flag_control_manual_enabled
+			//     && fabsf(_parameters.flaperon_scale) > 0.01f) {
+			// 	flaperon_control = 0.5f * (_manual.aux2 + 1.0f) * _parameters.flaperon_scale;
+			//
+			// } else if (_vcontrol_mode.flag_control_auto_enabled
+			// 	   && fabsf(_parameters.flaperon_scale) > 0.01f) {
+			// 	flaperon_control = _att_sp.apply_flaps ? 1.0f * _parameters.flaperon_scale : 0.0f;
+			// }
+			//
+			// // move the actual control value continuous with time, full flap travel in 1sec
+			// if (fabsf(_flaperons_applied - flaperon_control) > 0.01f) {
+			// 	_flaperons_applied += (_flaperons_applied - flaperon_control) < 0 ? deltaT : -deltaT;
+			//
+			// } else {
+			// 	_flaperons_applied = flaperon_control;
+			// }
 
-			} else if (_vcontrol_mode.flag_control_auto_enabled
-				   && fabsf(_parameters.flaps_scale) > 0.01f) {
-				flap_control = _att_sp.apply_flaps ? 1.0f * _parameters.flaps_scale : 0.0f;
-			}
+			// // Check if we are in rattitude mode and the pilot is above the threshold on pitch
+			// if (_vcontrol_mode.flag_control_rattitude_enabled) {
+			// 	if (fabsf(_manual.y) > _parameters.rattitude_thres ||
+			// 	    fabsf(_manual.x) > _parameters.rattitude_thres) {
+			// 		_vcontrol_mode.flag_control_attitude_enabled = false;
+			// 	}
+			// }
 
-			// move the actual control value continuous with time, full flap travel in 1sec
-			if (fabsf(_flaps_applied - flap_control) > 0.01f) {
-				_flaps_applied += (_flaps_applied - flap_control) < 0 ? deltaT : -deltaT;
-
-			} else {
-				_flaps_applied = flap_control;
-			}
-
-			/* default flaperon to center */
-			float flaperon_control = 0.0f;
-
-			/* map flaperons by default to manual if valid */
-			if (PX4_ISFINITE(_manual.aux2) && _vcontrol_mode.flag_control_manual_enabled
-			    && fabsf(_parameters.flaperon_scale) > 0.01f) {
-				flaperon_control = 0.5f * (_manual.aux2 + 1.0f) * _parameters.flaperon_scale;
-
-			} else if (_vcontrol_mode.flag_control_auto_enabled
-				   && fabsf(_parameters.flaperon_scale) > 0.01f) {
-				flaperon_control = _att_sp.apply_flaps ? 1.0f * _parameters.flaperon_scale : 0.0f;
-			}
-
-			// move the actual control value continuous with time, full flap travel in 1sec
-			if (fabsf(_flaperons_applied - flaperon_control) > 0.01f) {
-				_flaperons_applied += (_flaperons_applied - flaperon_control) < 0 ? deltaT : -deltaT;
-
-			} else {
-				_flaperons_applied = flaperon_control;
-			}
-
-			// Check if we are in rattitude mode and the pilot is above the threshold on pitch
-			if (_vcontrol_mode.flag_control_rattitude_enabled) {
-				if (fabsf(_manual.y) > _parameters.rattitude_thres ||
-				    fabsf(_manual.x) > _parameters.rattitude_thres) {
-					_vcontrol_mode.flag_control_attitude_enabled = false;
-				}
-			}
+			// KITEX
+			bool manual_overwrite = fabsf(_manual.y) > 0.2f || fabsf(_manual.x) > 0.2f;
 
 			/* decide if in stabilized or full manual control */
-			if (_vcontrol_mode.flag_control_rates_enabled) {
+			if (!manual_overwrite) {
+			// if (_vcontrol_mode.flag_control_rates_enabled) {
 				/* scale around tuning airspeed */
 				float airspeed;
 
@@ -987,39 +1138,39 @@ FixedwingAttitudeControl::task_main()
 				float roll_sp = _parameters.rollsp_offset_rad;
 				float pitch_sp = _parameters.pitchsp_offset_rad;
 				float yaw_sp = 0.0f;
-				float yaw_manual = 0.0f;
-				float throttle_sp = 0.0f;
+				// float yaw_manual = 0.0f;
+				// float throttle_sp = 0.0f;
 
-				// in STABILIZED mode we need to generate the attitude setpoint
-				// from manual user inputs
-				if (!_vcontrol_mode.flag_control_climb_rate_enabled && !_vcontrol_mode.flag_control_offboard_enabled) {
-					_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
-					_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
-					_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.pitchsp_offset_rad;
-					_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
-					_att_sp.yaw_body = 0.0f;
-					_att_sp.thrust = _manual.z;
-
-					Quatf q(Eulerf(_att_sp.roll_body, _att_sp.pitch_body, _att_sp.yaw_body));
-					_att_sp.q_d[0] = q(0);
-					_att_sp.q_d[1] = q(1);
-					_att_sp.q_d[2] = q(2);
-					_att_sp.q_d[3] = q(3);
-					_att_sp.q_d_valid = true;
-
-					int instance;
-					orb_publish_auto(_attitude_setpoint_id, &_attitude_sp_pub, &_att_sp, &instance, ORB_PRIO_DEFAULT);
-				}
+				// // in STABILIZED mode we need to generate the attitude setpoint
+				// // from manual user inputs
+				// if (!_vcontrol_mode.flag_control_climb_rate_enabled && !_vcontrol_mode.flag_control_offboard_enabled) {
+				// 	_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
+				// 	_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
+				// 	_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.pitchsp_offset_rad;
+				// 	_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
+				// 	_att_sp.yaw_body = 0.0f;
+				// 	_att_sp.thrust = _manual.z;
+				//
+				// 	Quatf q(Eulerf(_att_sp.roll_body, _att_sp.pitch_body, _att_sp.yaw_body));
+				// 	_att_sp.q_d[0] = q(0);
+				// 	_att_sp.q_d[1] = q(1);
+				// 	_att_sp.q_d[2] = q(2);
+				// 	_att_sp.q_d[3] = q(3);
+				// 	_att_sp.q_d_valid = true;
+				//
+				// 	int instance;
+				// 	orb_publish_auto(_attitude_setpoint_id, &_attitude_sp_pub, &_att_sp, &instance, ORB_PRIO_DEFAULT);
+				// }
 
 				roll_sp = _att_sp.roll_body;
 				pitch_sp = _att_sp.pitch_body;
 				yaw_sp = _att_sp.yaw_body;
-				throttle_sp = _att_sp.thrust;
+				// throttle_sp = _att_sp.thrust;
 
-				/* allow manual yaw in manual modes */
-				if (_vcontrol_mode.flag_control_manual_enabled) {
-					yaw_manual = _manual.r;
-				}
+				// /* allow manual yaw in manual modes */
+				// if (_vcontrol_mode.flag_control_manual_enabled) {
+				// 	yaw_manual = _manual.r;
+				// }
 
 				/* reset integrals where needed */
 				if (_att_sp.roll_reset_integral) {
@@ -1064,132 +1215,139 @@ FixedwingAttitudeControl::task_main()
 
 				_yaw_ctrl.set_coordinated_method(_parameters.y_coordinated_method);
 
-				/* Run attitude controllers */
-				if (_vcontrol_mode.flag_control_attitude_enabled) {
-					if (PX4_ISFINITE(roll_sp) && PX4_ISFINITE(pitch_sp)) {
-						_roll_ctrl.control_attitude(control_input);
-						_pitch_ctrl.control_attitude(control_input);
-						_yaw_ctrl.control_attitude(control_input); //runs last, because is depending on output of roll and pitch attitude
-						_wheel_ctrl.control_attitude(control_input);
-
-						/* Update input data for rate controllers */
-						control_input.roll_rate_setpoint = _roll_ctrl.get_desired_rate();
-						control_input.pitch_rate_setpoint = _pitch_ctrl.get_desired_rate();
-						control_input.yaw_rate_setpoint = _yaw_ctrl.get_desired_rate();
-
-						/* Run attitude RATE controllers which need the desired attitudes from above, add trim */
-						float roll_u = _roll_ctrl.control_euler_rate(control_input);
-						_actuators.control[actuator_controls_s::INDEX_ROLL] = (PX4_ISFINITE(roll_u)) ? roll_u + _parameters.trim_roll :
-								_parameters.trim_roll;
-
-						if (!PX4_ISFINITE(roll_u)) {
-							_roll_ctrl.reset_integrator();
-							perf_count(_nonfinite_output_perf);
-
-							if (_debug && loop_counter % 10 == 0) {
-								warnx("roll_u %.4f", (double)roll_u);
-							}
-						}
-
-						float pitch_u = _pitch_ctrl.control_euler_rate(control_input);
-						_actuators.control[actuator_controls_s::INDEX_PITCH] = (PX4_ISFINITE(pitch_u)) ? pitch_u + _parameters.trim_pitch :
-								_parameters.trim_pitch;
-
-						if (!PX4_ISFINITE(pitch_u)) {
-							_pitch_ctrl.reset_integrator();
-							perf_count(_nonfinite_output_perf);
-
-							if (_debug && loop_counter % 10 == 0) {
-								warnx("pitch_u %.4f, _yaw_ctrl.get_desired_rate() %.4f,"
-								      " airspeed %.4f, airspeed_scaling %.4f,"
-								      " roll_sp %.4f, pitch_sp %.4f,"
-								      " _roll_ctrl.get_desired_rate() %.4f,"
-								      " _pitch_ctrl.get_desired_rate() %.4f"
-								      " att_sp.roll_body %.4f",
-								      (double)pitch_u, (double)_yaw_ctrl.get_desired_rate(),
-								      (double)airspeed, (double)airspeed_scaling,
-								      (double)roll_sp, (double)pitch_sp,
-								      (double)_roll_ctrl.get_desired_rate(),
-								      (double)_pitch_ctrl.get_desired_rate(),
-								      (double)_att_sp.roll_body);
-							}
-						}
-
-						float yaw_u = 0.0f;
-
-						if (_att_sp.fw_control_yaw == true) {
-							yaw_u = _wheel_ctrl.control_bodyrate(control_input);
-
-						} else {
-							yaw_u = _yaw_ctrl.control_euler_rate(control_input);
-						}
-
-						_actuators.control[actuator_controls_s::INDEX_YAW] = (PX4_ISFINITE(yaw_u)) ? yaw_u + _parameters.trim_yaw :
-								_parameters.trim_yaw;
-
-						/* add in manual rudder control */
-						_actuators.control[actuator_controls_s::INDEX_YAW] += yaw_manual;
-
-						if (!PX4_ISFINITE(yaw_u)) {
-							_yaw_ctrl.reset_integrator();
-							_wheel_ctrl.reset_integrator();
-							perf_count(_nonfinite_output_perf);
-
-							if (_debug && loop_counter % 10 == 0) {
-								warnx("yaw_u %.4f", (double)yaw_u);
-							}
-						}
-
-						/* throttle passed through if it is finite and if no engine failure was detected */
-						_actuators.control[actuator_controls_s::INDEX_THROTTLE] = (PX4_ISFINITE(throttle_sp) &&
-								!(_vehicle_status.engine_failure ||
-								  _vehicle_status.engine_failure_cmd)) ?
-								throttle_sp : 0.0f;
-
-						/* scale effort by battery status */
-						if (_parameters.bat_scale_en && _battery_status.scale > 0.0f &&
-						    _actuators.control[actuator_controls_s::INDEX_THROTTLE] > 0.1f) {
-							_actuators.control[actuator_controls_s::INDEX_THROTTLE] *= _battery_status.scale;
-						}
-
-
-						if (!PX4_ISFINITE(throttle_sp)) {
-							if (_debug && loop_counter % 10 == 0) {
-								warnx("throttle_sp %.4f", (double)throttle_sp);
-							}
-						}
-
-					} else {
-						perf_count(_nonfinite_input_perf);
-
-						if (_debug && loop_counter % 10 == 0) {
-							warnx("Non-finite setpoint roll_sp: %.4f, pitch_sp %.4f", (double)roll_sp, (double)pitch_sp);
-						}
-					}
-
-				} else {
+				// /* Run attitude controllers */
+				// if (_vcontrol_mode.flag_control_attitude_enabled) {
+				// 	if (PX4_ISFINITE(roll_sp) && PX4_ISFINITE(pitch_sp)) {
+				// 		_roll_ctrl.control_attitude(control_input);
+				// 		_pitch_ctrl.control_attitude(control_input);
+				// 		_yaw_ctrl.control_attitude(control_input); //runs last, because is depending on output of roll and pitch attitude
+				// 		_wheel_ctrl.control_attitude(control_input);
+				//
+				// 		/* Update input data for rate controllers */
+				// 		control_input.roll_rate_setpoint = _roll_ctrl.get_desired_rate();
+				// 		control_input.pitch_rate_setpoint = _pitch_ctrl.get_desired_rate();
+				// 		control_input.yaw_rate_setpoint = _yaw_ctrl.get_desired_rate();
+				//
+				// 		/* Run attitude RATE controllers which need the desired attitudes from above, add trim */
+				// 		float roll_u = _roll_ctrl.control_euler_rate(control_input);
+				// 		_actuators.control[actuator_controls_s::INDEX_ROLL] = (PX4_ISFINITE(roll_u)) ? roll_u + _parameters.trim_roll :
+				// 				_parameters.trim_roll;
+				//
+				// 		if (!PX4_ISFINITE(roll_u)) {
+				// 			_roll_ctrl.reset_integrator();
+				// 			perf_count(_nonfinite_output_perf);
+				//
+				// 			if (_debug && loop_counter % 10 == 0) {
+				// 				warnx("roll_u %.4f", (double)roll_u);
+				// 			}
+				// 		}
+				//
+				// 		float pitch_u = _pitch_ctrl.control_euler_rate(control_input);
+				// 		_actuators.control[actuator_controls_s::INDEX_PITCH] = (PX4_ISFINITE(pitch_u)) ? pitch_u + _parameters.trim_pitch :
+				// 				_parameters.trim_pitch;
+				//
+				// 		if (!PX4_ISFINITE(pitch_u)) {
+				// 			_pitch_ctrl.reset_integrator();
+				// 			perf_count(_nonfinite_output_perf);
+				//
+				// 			if (_debug && loop_counter % 10 == 0) {
+				// 				warnx("pitch_u %.4f, _yaw_ctrl.get_desired_rate() %.4f,"
+				// 				      " airspeed %.4f, airspeed_scaling %.4f,"
+				// 				      " roll_sp %.4f, pitch_sp %.4f,"
+				// 				      " _roll_ctrl.get_desired_rate() %.4f,"
+				// 				      " _pitch_ctrl.get_desired_rate() %.4f"
+				// 				      " att_sp.roll_body %.4f",
+				// 				      (double)pitch_u, (double)_yaw_ctrl.get_desired_rate(),
+				// 				      (double)airspeed, (double)airspeed_scaling,
+				// 				      (double)roll_sp, (double)pitch_sp,
+				// 				      (double)_roll_ctrl.get_desired_rate(),
+				// 				      (double)_pitch_ctrl.get_desired_rate(),
+				// 				      (double)_att_sp.roll_body);
+				// 			}
+				// 		}
+				//
+				// 		float yaw_u = 0.0f;
+				//
+				// 		if (_att_sp.fw_control_yaw == true) {
+				// 			yaw_u = _wheel_ctrl.control_bodyrate(control_input);
+				//
+				// 		} else {
+				// 			yaw_u = _yaw_ctrl.control_euler_rate(control_input);
+				// 		}
+				//
+				// 		_actuators.control[actuator_controls_s::INDEX_YAW] = (PX4_ISFINITE(yaw_u)) ? yaw_u + _parameters.trim_yaw :
+				// 				_parameters.trim_yaw;
+				//
+				// 		/* add in manual rudder control */
+				// 		_actuators.control[actuator_controls_s::INDEX_YAW] += yaw_manual;
+				//
+				// 		if (!PX4_ISFINITE(yaw_u)) {
+				// 			_yaw_ctrl.reset_integrator();
+				// 			_wheel_ctrl.reset_integrator();
+				// 			perf_count(_nonfinite_output_perf);
+				//
+				// 			if (_debug && loop_counter % 10 == 0) {
+				// 				warnx("yaw_u %.4f", (double)yaw_u);
+				// 			}
+				// 		}
+				//
+				// 		/* throttle passed through if it is finite and if no engine failure was detected */
+				// 		_actuators.control[actuator_controls_s::INDEX_THROTTLE] = (PX4_ISFINITE(throttle_sp) &&
+				// 				!(_vehicle_status.engine_failure ||
+				// 				  _vehicle_status.engine_failure_cmd)) ?
+				// 				throttle_sp : 0.0f;
+				//
+				// 		/* scale effort by battery status */
+				// 		if (_parameters.bat_scale_en && _battery_status.scale > 0.0f &&
+				// 		    _actuators.control[actuator_controls_s::INDEX_THROTTLE] > 0.1f) {
+				// 			_actuators.control[actuator_controls_s::INDEX_THROTTLE] *= _battery_status.scale;
+				// 		}
+				//
+				//
+				// 		if (!PX4_ISFINITE(throttle_sp)) {
+				// 			if (_debug && loop_counter % 10 == 0) {
+				// 				warnx("throttle_sp %.4f", (double)throttle_sp);
+				// 			}
+				// 		}
+				//
+				// 	} else {
+				// 		perf_count(_nonfinite_input_perf);
+				//
+				// 		if (_debug && loop_counter % 10 == 0) {
+				// 			warnx("Non-finite setpoint roll_sp: %.4f, pitch_sp %.4f", (double)roll_sp, (double)pitch_sp);
+				// 		}
+				// 	}
+				//
+				// } else {
 					// pure rate control
-					_roll_ctrl.set_bodyrate_setpoint(_manual.y * _parameters.acro_max_x_rate_rad);
-					_pitch_ctrl.set_bodyrate_setpoint(-_manual.x * _parameters.acro_max_y_rate_rad);
-					_yaw_ctrl.set_bodyrate_setpoint(_manual.r * _parameters.acro_max_z_rate_rad);
+
+					// Don't we need to do this?
+					// control_input.roll_rate_setpoint = _arc_roll_rate;
+
+					_roll_ctrl.set_bodyrate_setpoint(_arc_roll_rate); // _manual.y * _parameters.acro_max_x_rate_rad
+					// _pitch_ctrl.set_bodyrate_setpoint(0); // -_manual.x * _parameters.acro_max_y_rate_rad
+					// _yaw_ctrl.set_bodyrate_setpoint(0);
 
 					float roll_u = _roll_ctrl.control_bodyrate(control_input);
 					_actuators.control[actuator_controls_s::INDEX_ROLL] = (PX4_ISFINITE(roll_u)) ? roll_u + _parameters.trim_roll :
 							_parameters.trim_roll;
 
-					float pitch_u = _pitch_ctrl.control_bodyrate(control_input);
+					// float pitch_u = _pitch_ctrl.control_bodyrate(control_input);
+					float pitch_u = 0;
 					_actuators.control[actuator_controls_s::INDEX_PITCH] = (PX4_ISFINITE(pitch_u)) ? pitch_u + _parameters.trim_pitch :
 							_parameters.trim_pitch;
 
-					float yaw_u = _yaw_ctrl.control_bodyrate(control_input);
+					// float yaw_u = _yaw_ctrl.control_bodyrate(control_input);
+					float yaw_u = 0;
 					_actuators.control[actuator_controls_s::INDEX_YAW] = (PX4_ISFINITE(yaw_u)) ? yaw_u + _parameters.trim_yaw :
 							_parameters.trim_yaw;
 
-					_actuators.control[actuator_controls_s::INDEX_THROTTLE] = (PX4_ISFINITE(throttle_sp) &&
-							//!(_vehicle_status.engine_failure ||
-							!_vehicle_status.engine_failure_cmd) ?
-							throttle_sp : 0.0f;
-				}
+					_actuators.control[actuator_controls_s::INDEX_THROTTLE] = _manual.z;
+							// (PX4_ISFINITE(throttle_sp) &&
+							// //!(_vehicle_status.engine_failure ||
+							// !_vehicle_status.engine_failure_cmd) ?
+							// throttle_sp : 0.0f;
+				// }
 
 				/*
 				 * Lazily publish the rate setpoint (for analysis, the actuators are published below)
@@ -1221,14 +1379,14 @@ FixedwingAttitudeControl::task_main()
 
 			// Add feed-forward from roll control output to yaw control output
 			// This can be used to counteract the adverse yaw effect when rolling the plane
-			_actuators.control[actuator_controls_s::INDEX_YAW] += _parameters.roll_to_yaw_ff * math::constrain(
-						_actuators.control[actuator_controls_s::INDEX_ROLL], -1.0f, 1.0f);
+			// _actuators.control[actuator_controls_s::INDEX_YAW] += _parameters.roll_to_yaw_ff * math::constrain(
+			// 			_actuators.control[actuator_controls_s::INDEX_ROLL], -1.0f, 1.0f);
 
-			_actuators.control[actuator_controls_s::INDEX_FLAPS] = _flaps_applied;
-			_actuators.control[5] = _manual.aux1;
-			_actuators.control[actuator_controls_s::INDEX_AIRBRAKES] = _flaperons_applied;
+			// _actuators.control[actuator_controls_s::INDEX_FLAPS] = _flaps_applied;
+			// _actuators.control[5] = _manual.aux1;
+			// _actuators.control[actuator_controls_s::INDEX_AIRBRAKES] = _flaperons_applied;
 			// FIXME: this should use _vcontrol_mode.landing_gear_pos in the future
-			_actuators.control[7] = _manual.aux3;
+			// _actuators.control[7] = _manual.aux3;
 
 			/* lazily publish the setpoint only once available */
 			_actuators.timestamp = hrt_absolute_time();
@@ -1358,4 +1516,120 @@ int fw_att_control_main(int argc, char *argv[])
 
 	warnx("unrecognized command");
 	return 1;
+}
+
+
+// KiteX functions
+
+/*
+	TODO:
+
+	-Bonus
+	Make unit sized path and multiply radius JIT
+	Make path an array of vectors
+*/
+
+// Impure versions
+
+// KiteX: Run when the angles for C change
+void FixedwingAttitudeControl::update_pi(float phi, float theta)
+{
+	_parameters.e_pi_x(0) = -sinf(phi);
+	_parameters.e_pi_x(1) = cosf(phi);
+	_parameters.e_pi_x(2) = 0;
+
+	_parameters.e_pi_y(0) = -cosf(phi)*sinf(theta);
+	_parameters.e_pi_y(1) = -sinf(phi)*sinf(theta);
+	_parameters.e_pi_y(2) = -cosf(theta);
+}
+
+// KiteX: Run when the turning radius changes
+void FixedwingAttitudeControl::update_pi_path(float radius)
+{
+	float offset = (float) M_PI_2; // index 0 at bottom of circle
+	for (int i = 0; i < 60; i++) {
+		float rho = i*2*M_PI/60;
+		_pi_path_x[i] = radius*cosf(rho + offset);
+		_pi_path_y[i] = -radius*sinf(rho + offset);
+	}
+}
+
+// KiteX: Run when position changes
+void FixedwingAttitudeControl::update_pi_projection()
+{
+	math::Vector<3> relative_pos = _pos - _parameters.pos_b; // _parameters.pos_b should really be C, but it doesn't matter since B anc C is along PI (Z)
+	_pos_pi(0) = relative_pos*_parameters.e_pi_x;
+	_pos_pi(1) = relative_pos*_parameters.e_pi_y;
+
+	_vel_pi(0) = _vel*_parameters.e_pi_x;
+	_vel_pi(1) = _vel*_parameters.e_pi_y;
+}
+
+void FixedwingAttitudeControl::update_pi_target_point(float search_radius)
+{
+	int index = _pi_path_i;
+
+	while ((double) square_distance_to_path(index) < pow(search_radius, 2)) {
+		index = (index + 1) % 60;
+	}
+
+	_pi_path_i = index;
+	_target_point_pi(0) = _pi_path_x[_pi_path_i];
+	_target_point_pi(1) = _pi_path_y[_pi_path_i];
+}
+
+void FixedwingAttitudeControl::update_pi_arc()
+{
+	math::Vector<2> delta_pos = _target_point_pi - _pos_pi;
+	float _arc_angle = signed_angle(_vel_pi, delta_pos);
+	float factor = 1/sqrtf(2*(1 - cosf(2*_arc_angle))); // Could use a simple sin function
+	_arc_radius = copysignf(1.0f, _arc_angle)*factor*delta_pos.length();
+}
+
+void FixedwingAttitudeControl::update_pi_roll_rate()
+{
+	_arc_roll_rate = -_vel_pi.length()/_arc_radius;
+}
+
+// void FixedwingAttitudeControl::publishTurning() {
+//
+// 	/*
+// 	 * Lazily publish the turning setpoint (for analysis)
+// 	 * only once available
+// 	 */
+// 	_fw_turning_sp.timestamp = hrt_absolute_time();
+// 	_fw_turning_sp.index = (uint16_t) _pi_path_i;
+// 	_fw_turning_sp.x = _pos_pi(0);
+// 	_fw_turning_sp.y = _pos_pi(1);
+// 	_fw_turning_sp.vx = _vel_pi(0);
+// 	_fw_turning_sp.vy = _vel_pi(1);
+// 	_fw_turning_sp.tx = _target_point_pi(0);
+// 	_fw_turning_sp.ty = _target_point_pi(1);
+// 	_fw_turning_sp.arc_radius = _arc_radius;
+// 	_fw_turning_sp.roll_rate = _arc_roll_rate;
+//
+// 	// printf("time: %llu, index: %i, arc_radius: %0.2f, arc_roll_rate: %0.2f\n", _fw_turning_sp.timestamp, _pi_path_i, (double) _arc_radius, (double) _arc_roll_rate);
+//
+// 	if (_fw_turning_sp_pub != nullptr) {
+// 		orb_publish(_fw_turning_sp_id, _fw_turning_sp_pub, &_fw_turning_sp);
+//
+// 	} else if (_fw_turning_sp_id) {
+// 		_fw_turning_sp_pub = orb_advertise(_fw_turning_sp_id, &_fw_turning_sp);
+// 	}
+// }
+
+// KiteX: Pure helper functions
+
+// This should give the same result with fewer calculations
+float FixedwingAttitudeControl::signed_angle(const math::Vector<2> &left, const math::Vector<2> &right)
+{
+	const math::Vector<2> e_x = left.normalized();
+	const math::Vector<2> e_y(-e_x(1), e_x(0));
+
+	return atan2f(right*e_y, right*e_x);
+}
+
+float FixedwingAttitudeControl::square_distance_to_path(const int path_i)
+{
+	return pow(_pos_pi(0) - _pi_path_x[path_i], 2) + pow(_pos_pi(1) - _pi_path_y[path_i], 2);
 }

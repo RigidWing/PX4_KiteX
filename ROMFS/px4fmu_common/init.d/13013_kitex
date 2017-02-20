@@ -1,0 +1,27 @@
+#!nsh
+#
+# @name VTOL SuperQ Kite
+#
+# @type VTOL Quad Tailsitter
+#
+# @output MAIN5 RUDDER
+# @output MAIN6 ELEVATOR
+#
+# @maintainer Andreas Okholm <andreas@kitex.tech>
+#
+
+sh /etc/init.d/rc.vtol_defaults
+
+# fw_pos_control_l1 stop // stop the controller to get more free RAM
+
+if [ $AUTOCNF == yes ]
+then
+    param set VT_MOT_COUNT 4
+    param set VT_IDLE_PWM_MC  1080
+    param set VT_TYPE 1
+fi
+
+set MIXER vtol_kitex
+
+set PWM_OUT 1234
+set MAV_TYPE 20

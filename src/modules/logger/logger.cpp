@@ -565,6 +565,7 @@ void Logger::add_default_topics()
 	add_topic("sensor_combined");
 	add_topic("vehicle_gps_position");
 	add_topic("vehicle_land_detected");
+	add_topic("fw_turning", 100);
 }
 
 void Logger::add_calibration_topics()

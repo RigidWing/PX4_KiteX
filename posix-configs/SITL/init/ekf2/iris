@@ -1,7 +1,7 @@
 uorb start
 param load
 param set MAV_TYPE 2
-param set SYS_AUTOSTART 4010
+param set SYS_AUTOSTART 13013
 param set SYS_RESTART_TYPE 2
 param set SYS_MC_EST_GROUP 2
 dataman start
@@ -61,6 +61,7 @@ navigator start
 ekf2 start
 mc_pos_control start
 mc_att_control start
+fw_att_control start
 mixer load /dev/pwm_output0 ROMFS/px4fmu_common/mixers/quad_dc.main.mix
 mavlink start -u 14556 -r 4000000
 mavlink start -u 14557 -r 4000000 -m onboard -o 14540
