@@ -1,108 +1,167 @@
-# PX4 Pro Drone Autopilot
+# KiteX PX4 Firmware #
 
-[![Releases](https://img.shields.io/github/release/PX4/Firmware.svg)](https://github.com/PX4/Firmware/releases) [![DOI](https://zenodo.org/badge/22634/PX4/Firmware.svg)](https://zenodo.org/badge/latestdoi/22634/PX4/Firmware)
+## Main modifications ##
 
-[![Build Status](http://ci.px4.io:8080/buildStatus/icon?job=Firmware/master)](http://ci.px4.io:8080/blue/organizations/jenkins/Firmware/activity) [![Coverity Scan](https://scan.coverity.com/projects/3966/badge.svg?flat=1)](https://scan.coverity.com/projects/3966?tab=overview)
-
-[![Slack](https://px4-slack.herokuapp.com/badge.svg)](http://slack.px4.io)
-
-This repository holds the [PX4 Pro](http://px4.io) flight control solution for drones, with the main applications located in the [src/modules](https://github.com/PX4/Firmware/tree/master/src/modules) directory. It also contains the PX4 Drone Middleware Platform, which provides drivers and middleware to run drones.
-
-* Official Website: http://px4.io (License: BSD 3-clause, [LICENSE](https://github.com/PX4/Firmware/blob/master/LICENSE))
-* [Supported airframes](https://docs.px4.io/en/airframes/airframe_reference.html) ([portfolio](http://px4.io/#airframes)):
-  * [Multicopters](https://docs.px4.io/en/airframes/airframe_reference.html#copter)
-  * [Fixed wing](https://docs.px4.io/en/airframes/airframe_reference.html#plane)
-  * [VTOL](https://docs.px4.io/en/airframes/airframe_reference.html#vtol)
-  * many more experimental types (Rovers, Blimps, Boats, Submarines, etc)
-* Releases: [Downloads](https://github.com/PX4/Firmware/releases)
+1. Created a new VTOL type (kite) with custom transition mixing of MC and FW controls.
+2. Modified FW attitude controller to follow a predefined path.
+3. Modified MC attitude controller to not fight yaw
+4. Modified MC position controller to have a constant pitch for tether tension.  
+5. Created new airframe 13013 KiteX
+6. Created custom mixer vtol_kitex
 
 
-## PX4 Users
+## How to fly/use ##
 
-The [PX4 User Guide](https://docs.px4.io/en/) explains how to assemble [supported vehicles](https://docs.px4.io/en/airframes/airframe_reference.html) and fly drones with PX4. 
-See the [forum and chat](https://docs.px4.io/en/#support) if you need help!
+1. Take off in manual mode
+2. Fly to the kite to the right side of the centre of looping.
+3. Set the throttle to between 80-100%
+4. Transition to FW flight mode.
+⋅⋅* Looping
+5. Transtion to MC flight mode when the kite is flying upwards.
+6. Land.
 
+## Parameters that needs to be set ##
 
-## PX4 Developers
+**Pos_B** // position of tether anchoring point in the local coordinate system (if kite is turned on at the origin pos_b = 0).
 
-This [Developer Guide](https://dev.px4.io/) is for software developers who want to modify the flight stack and middleware (e.g. to add new flight modes), hardware integrators who want to support new flight controller boards and peripherals, and anyone who wants to get PX4 working on a new (unsupported) airframe/vehicle.
-
-Developers should read the [Guide for Contributions](https://dev.px4.io/en/contribute/).
-See the [forum and chat](https://dev.px4.io/en/#support) if you need help!
-
-
-### Weekly Dev Call
-
-The PX4 Dev Team syncs up on a [weekly dev call](https://dev.px4.io/en/contribute/#dev_call).
-
-> **Note** The dev call is open to all interested developers (not just the core dev team). This is a great opportunity to meet the team and contribute to the ongoing development of the platform. It includes a QA session for newcomers.
+PARAM_DEFINE_FLOAT(MPC_X_POS_B, 0.0f);
+PARAM_DEFINE_FLOAT(MPC_Y_POS_B, 0.0f);
+PARAM_DEFINE_FLOAT(MPC_Z_POS_B, 0.0f);
 
 
-## Maintenance Team
+**Angles to C.** Defines the centre of looping relative to the anchoring point.
 
-  * Project: Founder - [Lorenz Meier](https://github.com/LorenzMeier), Architecture: [Daniel Agar](https://github.com/dagar)
-    * [Dev Call](https://github.com/PX4/Firmware/labels/devcall) - [Ramon Roche](https://github.com/mrpollo)
-  * Communication Architecture
-    * [Beat Kueng](https://github.com/bkueng)
-    * [Julian Oes](https://github.com/JulianOes)
-  * UI / UX
-    * [Donald Gagne](https://github.com/DonLakeFlyer)
-    * [Gus Grubba](https://github.com/dogmaphobic)
-  * [Multicopter Flight Control](https://github.com/PX4/Firmware/labels/multicopter)
-    * [Dennis Mannhart](https://github.com/Stifael)
-    * [Matthias Grob](https://github.com/MaEtUgR)
-  * [VTOL Flight Control](https://github.com/PX4/Firmware/labels/vtol)
-    * [Daniel Agar](https://github.com/dagar)
-    * [Mathieu Bresciani](https://github.com/bresch)
-    * [Sander Smeets](https://github.com/sanderux)
-    * [Roman Bapst](https://github.com/tumbili)
-    * [Andreas Antener](https://github.com/AndreasAntener)
-  * [Fixed Wing Flight Control](https://github.com/PX4/Firmware/labels/fixedwing)
-    * [Daniel Agar](https://github.com/dagar)
-    * [Paul Riseborough](https://github.com/priseborough)
-  * Racers - [Matthias Grob](https://github.com/MaEtUgR)
-  * OS / drivers - [David Sidrane](https://github.com/davids5)
-  * [UAVCAN](https://github.com/PX4/Firmware/labels/uavcan) / Industrial - [Pavel Kirienko](https://github.com/pavel-kirienko)
-  * [State Estimation](https://github.com/PX4/Firmware/issues?q=is%3Aopen+is%3Aissue+label%3A%22state+estimation%22) - [James Goppert](https://github.com/jgoppert), [Paul Riseborough](https://github.com/priseborough)
-  * Vision based navigation
-    * [Christoph Tobler](https://github.com/ChristophTobler)
-    * [Mohammed Kabir](https://github.com/mhkabir)
-  * Obstacle Avoidance - [Martina Rivizzigno](https://github.com/mrivi)
-  * [Snapdragon](https://github.com/PX4/Firmware/labels/snapdragon)
-    * [Christoph Tobler](https://github.com/ChristophTobler)
-  * [Intel Aero](https://github.com/PX4/Firmware/labels/intel%20aero)
-    * [Sugnan Prabhu](https://github.com/sugnanprabhu)
-    * [José Roberto de Souza](https://github.com/zehortigoza)
-  * [Raspberry Pi / Navio](https://github.com/PX4/Firmware/labels/raspberry_pi) - [Beat Kueng](https://github.com/bkueng)
-  * [Airmind MindPX / MindRacer](https://github.com/PX4/Firmware/labels/mindpx) - [Henry Zhang](https://github.com/iZhangHui)
-  * RTPS/ROS2 Interface - [Vicente Monge](https://github.com/vicenteeprosima)
+Phi is relative to the X-axis, theta to the XY-plane, positive for negative z.
 
-See also [About Us](http://px4.io/about-us/#development_team) (px4.io) and the [contributors list](https://github.com/PX4/Firmware/graphs/contributors) (Github).
+PARAM_DEFINE_FLOAT(MPC_PHI_C, 0.0f);
+PARAM_DEFINE_FLOAT(MPC_THETA_C, 0.0f);
 
-## Supported Hardware
+**turn_r** Turning radius in the Pi-plane (general turning radius - 23 meters could be a starting value)
 
-This repository contains code supporting these boards:
-  * [Snapdragon Flight](https://docs.px4.io/en/flight_controller/snapdragon_flight.html)
-  * [Intel Aero](https://docs.px4.io/en/flight_controller/intel_aero.html)
-  * [Raspberry PI with Navio 2](https://docs.px4.io/en/flight_controller/raspberry_pi_navio2.html)
-  * [Parrot Bebop 2](https://dev.px4.io/en/advanced/parrot_bebop.html)
-  * FMUv2.x
-    * [Pixhawk](https://docs.px4.io/en/flight_controller/pixhawk.html)
-    * [Pixhawk Mini](https://docs.px4.io/en/flight_controller/pixhawk_mini.html)
-    * [Pixfalcon](https://docs.px4.io/en/flight_controller/pixfalcon.html)
-  * FMUv3.x [Pixhawk 2](https://pixhawk.org/modules/pixhawk2)
-  * FMUv4.x
-    * [Pixracer](https://docs.px4.io/en/flight_controller/pixracer.html)
-    * [Pixhawk 3 Pro](https://docs.px4.io/en/flight_controller/pixhawk3_pro.html)
-  * FMUv5.x (ARM Cortex M7, future Pixhawk)
-  * [STM32F4Discovery](http://www.st.com/en/evaluation-tools/stm32f4discovery.html) (basic support) [Tutorial](https://pixhawk.org/modules/stm32f4discovery)
-  * [Gumstix AeroCore](https://www.gumstix.com/aerocore-2/) (only v2)
-  * [Airmind MindPX V2.8](http://www.mindpx.net/assets/accessories/UserGuide_MindPX.pdf)
-  * [Airmind MindRacer V1.2](http://mindpx.net/assets/accessories/mindracer_user_guide_v1.2.pdf)
-  * [Bitcraze Crazyflie 2.0](https://docs.px4.io/en/flight_controller/crazyflie2.html)
+PARAM_DEFINE_FLOAT(MPC_LOOP_TURN_R, 0.0f);
 
-Additional information about supported hardware can be found in [PX4 user Guide > Autopilot Hardware](https://docs.px4.io/en/flight_controller/).
 
-## Project Roadmap
+## “manual control” ##
+We make use of the manual remote aux channels. To control various failsafe methods and enable tethered hovering mode while in MC flight mode. AUX
 
-A high level project roadmap is available [here](https://www.dronecode.org/roadmap/).
+
+### Aux1 ###  
+Activated above 0.0f.
+- Disables yaw compensation **(should be high for the entire tethered flight).**
+- Enables fixed pitch in MC mode (not velocity controlled mode only => manual and altitude mode)
+Files: mc_att_control, mc_pos_control
+
+### Aux2 ###
+AUX2 > 0.0f activates is a failsafe that’s intented to protect against crashing into the ground.
+Files: vtol_att_control/kite.cpp
+
+### Aux3 ###
+AUX3 > 0.0f turns on an automatic failsafe if the kites is below 10 meters above ground.
+Files: vtol_att_control/kite.cpp
+
+
+## Other information ##
+
+### Frame of reference ###
+
+The orientation of the local reference frame is like you would expect from a multicopter.
+
+While hovering at the time of takeoff.
+1. Positive X is in the direction from the tether anchoring point to the drone.
+1. Positive Y is to the right looking from the tether anchoring point towards the drone along the span of the main wing.
+1. Positive Z is downwards towards the centre of earth.
+
+The frame of reference doesn't chance for the FW flight mode hence what's normally considered yaw for a fixed wing (FW) aircraft is roll in the local reference frame ect.
+
+### VTOL TYPE ###
+
+VTOL type = 1 is the kite
+
+```
+enum vtol_type {
+	TAILSITTER = 0,
+	KITE,
+	TILTROTOR,
+	STANDARD
+};
+```
+
+### Other parameters ###
+
+**Param MPC_TET_POS_CTL**
+Activates above 0.5
+// not current in use. Can be used for more sophisticated hovering on the sphere. In position control (using offboard or loiter). Be careful if in “manual” position mode as position setup is not forced to be on the sphere - only the velocity set point is set to be tangential.
+
+PARAM_DEFINE_FLOAT(MPC_TET_POS_CTL, 0);
+
+
+## KiteX SuperQ kite specification ##
+
+The source code has been tested with two KiteX SuperQ demonstration models. For software in the loop simulation the following parameters can be used.
+
+#### Inertial properties (without tether) ####
+* mass: 1.4 kg
+* J: the following matrix has been used for previous simulations.
+
+```
+function generateJ() {
+   // Moment of Inertia kite
+    var JkiteX = 0.15 kg m2
+    var JkiteY = 0.05 kg m2
+    var JkiteZ = 0.15 kg m2
+
+    var J = new Matrix3()
+    // J.set( 11, 12, 13,
+    //        21, 22, 23,
+    //        31, 32, 33 );
+    return J.set( JkiteX, 0, 0,
+          0, JkiteY, 0,
+          0, 0, JkiteZ );
+}
+```
+
+#### Main Wing: ####
+* airfoil: asymmetric low Reynolds number single airfoil
+* cord: 140 mm
+* span: 1400 mm
+* angle of incidence: 5 deg negative rotation about Y
+* distance to COG: (x,y,z): (0,0,0)
+
+#### Vertical wing: ####
+* airfoil: asymmetric low Reynolds number single element airfoil
+* cord: 140 mm
+* span: 600 (x2) mm
+* angle of incidence: 8 deg positive rotation about X
+* distance to COG: (x,y,z): (0,0,0)
+
+#### Rudder ####
+* span: 600 mm
+* cord: 60 mm
+* airfoil: NACA 0012
+* distance to COG: (x,y,z): (0,0,700)
+* movement: ~ +- 30 deg with the 8000,8000 PX4 mixer setting.
+
+#### Elevator ####
+* span: 600 mm
+* cord: 60 mm
+* airfoil: NACA 0012
+* distance to COG: (x,y,z): (0,0,630)
+* movement: ~+- 40 deg. Neutral at ~ 24 degree positive Y
+* note: Should be parallel to fuselage at a normalised output of 0.6.
+
+#### Tether ####
+* length: 80 m
+* bridle attachment points on kite (3): (x,y,z): (0, (-680, 0, 680), 0)
+* brindle connection point: (x,y,z): (-2400, 0, 0)
+* mass: ~ 0.3 kg evenly distributed
+* thickness: ~ 1.5 mm
+
+#### Rotors ####
+* model: DAL T5045C Cyclone
+* motor: Emax RS2205S 2300KV "Red Bottom" RaceSpec Motor
+* Bench test:
+[miniQuadtestbench](https://www.miniquadtestbench.com/2300kv-shootout-emax-rs2205-2300kv.html)
+[rceagle](https://www.rceagle.com/blog/thrust-test-emxax-rs2205-2300kv-motor-mit-verschieden-dal-props-propellern-und-3s-4s-lipo)
+* maximum static thrust: ~617g ~= 7N
+* voltage: 3s lipo ~ 11.1 V
+* Max RPM: ~ 22.000 RPM

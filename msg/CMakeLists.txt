@@ -56,6 +56,7 @@ set(msg_files
 	esc_status.msg
 	estimator_status.msg
 	follow_target.msg
+	fw_turning.msg
 	fw_pos_ctrl_status.msg
 	geofence_result.msg
 	gps_dump.msg
@@ -128,6 +129,7 @@ set(msg_files
 	vehicle_status_flags.msg
 	vtol_vehicle_status.msg
 	wind_estimate.msg
+	gps_pos_b.msg
 	)
 
 if(NOT EXTERNAL_MODULES_LOCATION STREQUAL "")

@@ -131,6 +131,7 @@ MulticopterAttitudeControl::MulticopterAttitudeControl() :
 	}
 
 	parameters_updated();
+	printf("START MC ATT CONTROL");
 }
 
 void
@@ -527,6 +528,12 @@ MulticopterAttitudeControl::control_attitude_rates(float dt)
 		_lp_filters_d[0].apply(rates(0)),
 		_lp_filters_d[1].apply(rates(1)),
 		_lp_filters_d[2].apply(rates(2)));
+	
+	/* KiteX don't fight yaw rotation, if in tether hover mode (AUX1) */
+	if (_manual_control_sp.aux1 > 0 ){
+		rates_err(2) = 0;
+		_rates_int(2) = 0;
+	}
 
 	_att_control = rates_p_scaled.emult(rates_err) +
 		       _rates_int -

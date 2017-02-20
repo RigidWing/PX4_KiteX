@@ -138,6 +138,7 @@ MavlinkReceiver::MavlinkReceiver(Mavlink *parent) :
 	_debug_vect_pub(nullptr),
 	_gps_inject_data_pub(nullptr),
 	_command_ack_pub(nullptr),
+	_gps_pos_b_pub(nullptr),
 	_control_mode_sub(orb_subscribe(ORB_ID(vehicle_control_mode))),
 	_actuator_armed_sub(orb_subscribe(ORB_ID(actuator_armed))),
 	_global_ref_timestamp(0),
@@ -261,6 +262,10 @@ MavlinkReceiver::handle_message(mavlink_message_t *msg)
 
 	case MAVLINK_MSG_ID_LOCAL_POSITION_NED_COV:
 		handle_message_local_position_ned_cov(msg);
+		break;
+
+	case MAVLINK_MSG_ID_SET_GPS_GLOBAL_ORIGIN:
+		handle_message_set_gps_global_origin(msg);
 		break;
 
 	case MAVLINK_MSG_ID_GPS_GLOBAL_ORIGIN:
@@ -1071,6 +1076,22 @@ MavlinkReceiver::handle_message_set_actuator_control_target(mavlink_message_t *m
 		}
 	}
 
+}
+
+void
+MavlinkReceiver::handle_message_set_gps_global_origin(mavlink_message_t *msg)
+{
+	mavlink_set_gps_global_origin_t set_origin;
+	mavlink_msg_set_gps_global_origin_decode(msg, &set_origin);
+
+
+	// if (!globallocalconverter_initialized()) {
+	// 	/* Set reference point conversion of local coordiantes <--> global coordinates */
+	// 	globallocalconverter_init((double)origin.latitude * 1.0e-7, (double)origin.longitude * 1.0e-7,
+	// 				  (float)origin.altitude * 1.0e-3f, hrt_absolute_time());
+	// 	_global_ref_timestamp = hrt_absolute_time();
+	//
+	// }
 }
 
 void

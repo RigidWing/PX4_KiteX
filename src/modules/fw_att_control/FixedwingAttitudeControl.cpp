@@ -32,6 +32,9 @@
  ****************************************************************************/
 
 #include "FixedwingAttitudeControl.hpp"
+#include <uORB/topics/fw_turning.h>  // kitex
+#include <uORB/topics/vehicle_local_position.h>
+#define _USE_MATH_DEFINES
 
 /**
  * Fixedwing attitude control app start / stop handling function
@@ -48,6 +51,25 @@ FixedwingAttitudeControl::FixedwingAttitudeControl() :
 	_nonfinite_input_perf(perf_alloc(PC_COUNT, "fwa_nani")),
 	_nonfinite_output_perf(perf_alloc(PC_COUNT, "fwa_nano"))
 {
+	_fw_turning_sp = {};
+
+	_vel_pi.zero();
+	_pos_pi.zero();
+
+	_parameters.pos_c.zero(); // is this needed
+	_parameters.e_pi_x.zero();
+	_parameters.e_pi_y.zero();
+
+	_parameter_handles.phiC						= param_find("MPC_PHI_C");
+	_parameter_handles.thetaC				 	= param_find("MPC_THETA_C");
+	_parameter_handles.turning_radius	= param_find("MPC_LOOP_TURN_R");
+
+	_parameter_handles.x_pos_b		= param_find("MPC_X_POS_B");
+	_parameter_handles.y_pos_b		= param_find("MPC_Y_POS_B");
+	_parameter_handles.z_pos_b		= param_find("MPC_Z_POS_B");
+
+	// _parameter_handles.tether_len	= param_find("MPC_TETHER_LEN");
+
 	_parameter_handles.p_tc = param_find("FW_P_TC");
 	_parameter_handles.p_p = param_find("FW_PR_P");
 	_parameter_handles.p_i = param_find("FW_PR_I");
@@ -80,6 +102,9 @@ FixedwingAttitudeControl::FixedwingAttitudeControl() :
 	_parameter_handles.airspeed_min = param_find("FW_AIRSPD_MIN");
 	_parameter_handles.airspeed_trim = param_find("FW_AIRSPD_TRIM");
 	_parameter_handles.airspeed_max = param_find("FW_AIRSPD_MAX");
+
+	_parameter_handles.y_coordinated_min_speed = param_find("FW_YCO_VMIN");
+	_parameter_handles.y_coordinated_method = param_find("FW_YCO_METHOD");
 
 	_parameter_handles.trim_roll = param_find("TRIM_ROLL");
 	_parameter_handles.trim_pitch = param_find("TRIM_PITCH");
@@ -130,6 +155,21 @@ FixedwingAttitudeControl::~FixedwingAttitudeControl()
 int
 FixedwingAttitudeControl::parameters_update()
 {
+
+	/* KiteX: Controlling C for looping */
+	param_get(_parameter_handles.phiC, &_parameters.phiC);
+	param_get(_parameter_handles.thetaC, &_parameters.thetaC);
+	param_get(_parameter_handles.turning_radius, &_parameters.turning_radius);
+
+	// param_get(_parameter_handles.tether_len, &_parameters.tether_len);
+
+	float v;
+	param_get(_parameter_handles.x_pos_b, &v);
+	_parameters.pos_b(0) = v;
+	param_get(_parameter_handles.y_pos_b, &v);
+	_parameters.pos_b(1) = v;
+	param_get(_parameter_handles.z_pos_b, &v);
+	_parameters.pos_b(2) = v;
 
 	int32_t tmp = 0;
 	param_get(_parameter_handles.p_tc, &(_parameters.p_tc));
@@ -210,6 +250,17 @@ FixedwingAttitudeControl::parameters_update()
 	}
 
 	param_get(_parameter_handles.bat_scale_en, &_parameters.bat_scale_en);
+
+	/* KiteX calculate C - not really needed */
+	//		float d	= calculate_d(_parameters.tether_len, _parameters.turning_radius);
+	//		_parameters.pos_c = calculate_vector(_parameters.phiC, _parameters.thetaC, d) + _parameters.pos_b;
+
+	//		_parameters.e_pi_x = calculate_e_pi_x(_parameters.phiC, _parameters.thetaC);
+	//		_parameters.e_pi_y = calculate_e_pi_y(_parameters.phiC, _parameters.thetaC);
+
+	// KiteX: Update projection plane and path
+	update_pi(_parameters.phiC, _parameters.thetaC);
+	update_pi_path(_parameters.turning_radius);
 
 	param_get(_parameter_handles.airspeed_mode, &tmp);
 	_parameters.airspeed_disabled = (tmp == 1);
@@ -349,6 +400,26 @@ FixedwingAttitudeControl::vehicle_setpoint_poll()
 }
 
 void
+FixedwingAttitudeControl::local_pos_poll()
+{
+	bool updated;
+	orb_check(_local_pos_sub, &updated);
+
+	if (updated) {
+		orb_copy(ORB_ID(vehicle_local_position), _local_pos_sub, &_local_pos);
+		_pos(0) = _local_pos.x;
+		_pos(1) = _local_pos.y;
+		_pos(2) = _local_pos.z;
+		_vel(0) = _local_pos.vx;
+		_vel(1) = _local_pos.vy;
+		_vel(2) = _local_pos.vz;
+
+		// printf("posTimestamp: %llu, currentTime: %llu, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f\n", _local_pos.timestamp, hrt_absolute_time(), (double) _pos(0), (double) _pos(1), (double) _pos(2), (double) _vel(0), (double) _vel(1), (double) _vel(2));
+	}
+}
+
+
+void
 FixedwingAttitudeControl::global_pos_poll()
 {
 	/* check if there is a new global position */
@@ -386,6 +457,7 @@ FixedwingAttitudeControl::vehicle_status_poll()
 				_actuators_id = ORB_ID(actuator_controls_0);
 				_attitude_setpoint_id = ORB_ID(vehicle_attitude_setpoint);
 			}
+			_fw_turning_sp_id = ORB_ID(fw_turning);
 		}
 	}
 }
@@ -406,6 +478,17 @@ FixedwingAttitudeControl::vehicle_land_detected_poll()
 	}
 }
 
+// KiteX: This is run when in a loop
+void FixedwingAttitudeControl::control_looping(float dt)
+{
+	update_pi_projection();
+	update_pi_target_point(0.8f * _parameters.turning_radius);
+	update_pi_arc();
+	update_pi_roll_rate();
+	// publishTurning();
+	// printf("_arc_radius: %.3f \n", (double) _arc_radius);
+}
+
 void FixedwingAttitudeControl::run()
 {
 	/*
@@ -416,6 +499,7 @@ void FixedwingAttitudeControl::run()
 	_vcontrol_mode_sub = orb_subscribe(ORB_ID(vehicle_control_mode));
 	_params_sub = orb_subscribe(ORB_ID(parameter_update));
 	_manual_sub = orb_subscribe(ORB_ID(manual_control_setpoint));
+	_local_pos_sub = orb_subscribe(ORB_ID(vehicle_local_position));
 	_global_pos_sub = orb_subscribe(ORB_ID(vehicle_global_position));
 	_vehicle_status_sub = orb_subscribe(ORB_ID(vehicle_status));
 	_vehicle_land_detected_sub = orb_subscribe(ORB_ID(vehicle_land_detected));
@@ -479,54 +563,14 @@ void FixedwingAttitudeControl::run()
 				deltaT = 0.01f;
 			}
 
+			control_looping(deltaT); // KiteX
+
 			/* load local copies */
 			orb_copy(ORB_ID(vehicle_attitude), _att_sub, &_att);
 
 			/* get current rotation matrix and euler angles from control state quaternions */
 			matrix::Dcmf R = matrix::Quatf(_att.q);
 
-			if (_vehicle_status.is_vtol && _parameters.vtol_type == vtol_type::TAILSITTER) {
-				/* vehicle is a tailsitter, we need to modify the estimated attitude for fw mode
-				 *
-				 * Since the VTOL airframe is initialized as a multicopter we need to
-				 * modify the estimated attitude for the fixed wing operation.
-				 * Since the neutral position of the vehicle in fixed wing mode is -90 degrees rotated around
-				 * the pitch axis compared to the neutral position of the vehicle in multicopter mode
-				 * we need to swap the roll and the yaw axis (1st and 3rd column) in the rotation matrix.
-				 * Additionally, in order to get the correct sign of the pitch, we need to multiply
-				 * the new x axis of the rotation matrix with -1
-				 *
-				 * original:			modified:
-				 *
-				 * Rxx  Ryx  Rzx		-Rzx  Ryx  Rxx
-				 * Rxy	Ryy  Rzy		-Rzy  Ryy  Rxy
-				 * Rxz	Ryz  Rzz		-Rzz  Ryz  Rxz
-				 * */
-				matrix::Dcmf R_adapted = R;		//modified rotation matrix
-
-				/* move z to x */
-				R_adapted(0, 0) = R(0, 2);
-				R_adapted(1, 0) = R(1, 2);
-				R_adapted(2, 0) = R(2, 2);
-
-				/* move x to z */
-				R_adapted(0, 2) = R(0, 0);
-				R_adapted(1, 2) = R(1, 0);
-				R_adapted(2, 2) = R(2, 0);
-
-				/* change direction of pitch (convert to right handed system) */
-				R_adapted(0, 0) = -R_adapted(0, 0);
-				R_adapted(1, 0) = -R_adapted(1, 0);
-				R_adapted(2, 0) = -R_adapted(2, 0);
-
-				/* fill in new attitude data */
-				R = R_adapted;
-
-				/* lastly, roll- and yawspeed have to be swaped */
-				float helper = _att.rollspeed;
-				_att.rollspeed = -_att.yawspeed;
-				_att.yawspeed = helper;
-			}
 
 			matrix::Eulerf euler_angles(R);
 
@@ -534,6 +578,7 @@ void FixedwingAttitudeControl::run()
 			vehicle_setpoint_poll();
 			vehicle_control_mode_poll();
 			vehicle_manual_poll();
+			local_pos_poll();
 			global_pos_poll();
 			vehicle_status_poll();
 			vehicle_land_detected_poll();
@@ -545,23 +590,12 @@ void FixedwingAttitudeControl::run()
 			/* lock integrator until control is started */
 			bool lock_integrator = !(_vcontrol_mode.flag_control_rates_enabled && !_vehicle_status.is_rotary_wing);
 
-			/* Simple handling of failsafe: deploy parachute if failsafe is on */
-			if (_vcontrol_mode.flag_control_termination_enabled) {
-				_actuators_airframe.control[7] = 1.0f;
 
-			} else {
-				_actuators_airframe.control[7] = 0.0f;
-			}
-
-			/* if we are in rotary wing mode, do nothing */
-			if (_vehicle_status.is_rotary_wing && !_vehicle_status.is_vtol) {
-				continue;
-			}
-
-			control_flaps(deltaT);
+			//control_flaps(deltaT);
 
 			/* decide if in stabilized or full manual control */
-			if (_vcontrol_mode.flag_control_rates_enabled) {
+			if (!manual_overwrite) {
+			// if (_vcontrol_mode.flag_control_rates_enabled) {
 				/* scale around tuning airspeed */
 				float airspeed;
 
@@ -825,14 +859,14 @@ void FixedwingAttitudeControl::run()
 
 			// Add feed-forward from roll control output to yaw control output
 			// This can be used to counteract the adverse yaw effect when rolling the plane
-			_actuators.control[actuator_controls_s::INDEX_YAW] += _parameters.roll_to_yaw_ff * math::constrain(
-						_actuators.control[actuator_controls_s::INDEX_ROLL], -1.0f, 1.0f);
+			//_actuators.control[actuator_controls_s::INDEX_YAW] += _parameters.roll_to_yaw_ff * math::constrain(
+			//			_actuators.control[actuator_controls_s::INDEX_ROLL], -1.0f, 1.0f);
 
-			_actuators.control[actuator_controls_s::INDEX_FLAPS] = _flaps_applied;
-			_actuators.control[5] = _manual.aux1;
-			_actuators.control[actuator_controls_s::INDEX_AIRBRAKES] = _flaperons_applied;
+			//_actuators.control[actuator_controls_s::INDEX_FLAPS] = _flaps_applied;
+			//_actuators.control[5] = _manual.aux1;
+			//_actuators.control[actuator_controls_s::INDEX_AIRBRAKES] = _flaperons_applied;
 			// FIXME: this should use _vcontrol_mode.landing_gear_pos in the future
-			_actuators.control[7] = _manual.aux3;
+			//_actuators.control[7] = _manual.aux3;
 
 			/* lazily publish the setpoint only once available */
 			_actuators.timestamp = hrt_absolute_time();
@@ -973,4 +1007,120 @@ int FixedwingAttitudeControl::print_status()
 int fw_att_control_main(int argc, char *argv[])
 {
 	return FixedwingAttitudeControl::main(argc, argv);
+}
+
+
+// KiteX functions
+
+/*
+	TODO:
+
+	-Bonus
+	Make unit sized path and multiply radius JIT
+	Make path an array of vectors
+*/
+
+// Impure versions
+
+// KiteX: Run when the angles for C change
+void FixedwingAttitudeControl::update_pi(float phi, float theta)
+{
+	_parameters.e_pi_x(0) = -sinf(phi);
+	_parameters.e_pi_x(1) = cosf(phi);
+	_parameters.e_pi_x(2) = 0;
+
+	_parameters.e_pi_y(0) = -cosf(phi)*sinf(theta);
+	_parameters.e_pi_y(1) = -sinf(phi)*sinf(theta);
+	_parameters.e_pi_y(2) = -cosf(theta);
+}
+
+// KiteX: Run when the turning radius changes
+void FixedwingAttitudeControl::update_pi_path(float radius)
+{
+	float offset = (float) M_PI_2; // index 0 at bottom of circle
+	for (int i = 0; i < 60; i++) {
+		float rho = i*2*M_PI/60;
+		_pi_path_x[i] = radius*cosf(rho + offset);
+		_pi_path_y[i] = -radius*sinf(rho + offset);
+	}
+}
+
+// KiteX: Run when position changes
+void FixedwingAttitudeControl::update_pi_projection()
+{
+	math::Vector<3> relative_pos = _pos - _parameters.pos_b; // _parameters.pos_b should really be C, but it doesn't matter since B anc C is along PI (Z)
+	_pos_pi(0) = relative_pos*_parameters.e_pi_x;
+	_pos_pi(1) = relative_pos*_parameters.e_pi_y;
+
+	_vel_pi(0) = _vel*_parameters.e_pi_x;
+	_vel_pi(1) = _vel*_parameters.e_pi_y;
+}
+
+void FixedwingAttitudeControl::update_pi_target_point(float search_radius)
+{
+	int index = _pi_path_i;
+
+	while ((double) square_distance_to_path(index) < pow(search_radius, 2)) {
+		index = (index + 1) % 60;
+	}
+
+	_pi_path_i = index;
+	_target_point_pi(0) = _pi_path_x[_pi_path_i];
+	_target_point_pi(1) = _pi_path_y[_pi_path_i];
+}
+
+void FixedwingAttitudeControl::update_pi_arc()
+{
+	math::Vector<2> delta_pos = _target_point_pi - _pos_pi;
+	float _arc_angle = signed_angle(_vel_pi, delta_pos);
+	float factor = 1/sqrtf(2*(1 - cosf(2*_arc_angle))); // Could use a simple sin function
+	_arc_radius = copysignf(1.0f, _arc_angle)*factor*delta_pos.length();
+}
+
+void FixedwingAttitudeControl::update_pi_roll_rate()
+{
+	_arc_roll_rate = -_vel_pi.length()/_arc_radius;
+}
+
+// void FixedwingAttitudeControl::publishTurning() {
+//
+// 	/*
+// 	 * Lazily publish the turning setpoint (for analysis)
+// 	 * only once available
+// 	 */
+// 	_fw_turning_sp.timestamp = hrt_absolute_time();
+// 	_fw_turning_sp.index = (uint16_t) _pi_path_i;
+// 	_fw_turning_sp.x = _pos_pi(0);
+// 	_fw_turning_sp.y = _pos_pi(1);
+// 	_fw_turning_sp.vx = _vel_pi(0);
+// 	_fw_turning_sp.vy = _vel_pi(1);
+// 	_fw_turning_sp.tx = _target_point_pi(0);
+// 	_fw_turning_sp.ty = _target_point_pi(1);
+// 	_fw_turning_sp.arc_radius = _arc_radius;
+// 	_fw_turning_sp.roll_rate = _arc_roll_rate;
+//
+// 	// printf("time: %llu, index: %i, arc_radius: %0.2f, arc_roll_rate: %0.2f\n", _fw_turning_sp.timestamp, _pi_path_i, (double) _arc_radius, (double) _arc_roll_rate);
+//
+// 	if (_fw_turning_sp_pub != nullptr) {
+// 		orb_publish(_fw_turning_sp_id, _fw_turning_sp_pub, &_fw_turning_sp);
+//
+// 	} else if (_fw_turning_sp_id) {
+// 		_fw_turning_sp_pub = orb_advertise(_fw_turning_sp_id, &_fw_turning_sp);
+// 	}
+// }
+
+// KiteX: Pure helper functions
+
+// This should give the same result with fewer calculations
+float FixedwingAttitudeControl::signed_angle(const math::Vector<2> &left, const math::Vector<2> &right)
+{
+	const math::Vector<2> e_x = left.normalized();
+	const math::Vector<2> e_y(-e_x(1), e_x(0));
+
+	return atan2f(right*e_y, right*e_x);
+}
+
+float FixedwingAttitudeControl::square_distance_to_path(const int path_i)
+{
+	return pow(_pos_pi(0) - _pi_path_x[path_i], 2) + pow(_pos_pi(1) - _pi_path_y[path_i], 2);
 }

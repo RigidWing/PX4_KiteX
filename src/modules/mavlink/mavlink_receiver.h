@@ -79,6 +79,8 @@
 #include <uORB/topics/collision_report.h>
 #include <uORB/topics/obstacle_distance.h>
 
+#include <uORB/topics/gps_pos_b.h>
+
 #include "mavlink_mission.h"
 #include "mavlink_parameters.h"
 #include "mavlink_ftp.h"
@@ -130,6 +132,7 @@ private:
 	void handle_message_set_mode(mavlink_message_t *msg);
 	void handle_message_att_pos_mocap(mavlink_message_t *msg);
 	void handle_message_vision_position_estimate(mavlink_message_t *msg);
+	void handle_message_set_gps_global_origin(mavlink_message_t *msg);
 	void handle_message_gps_global_origin(mavlink_message_t *msg);
 	void handle_message_attitude_quaternion_cov(mavlink_message_t *msg);
 	void handle_message_local_position_ned_cov(mavlink_message_t *msg);
@@ -238,6 +241,7 @@ private:
 	static const int _gps_inject_data_queue_size = 6;
 	orb_advert_t _gps_inject_data_pub;
 	orb_advert_t _command_ack_pub;
+	orb_advert_t _gps_pos_b_pub;
 	int _control_mode_sub;
 	int _actuator_armed_sub;
 	uint64_t _global_ref_timestamp;

@@ -78,6 +78,7 @@
 #include <uORB/topics/vehicle_rates_setpoint.h>
 #include <uORB/topics/vtol_vehicle_status.h>
 
+#include "kite.h"
 #include "tiltrotor.h"
 #include "tailsitter.h"
 #include "standard.h"
@@ -201,6 +202,7 @@ private:
 		param_t front_trans_timeout;
 		param_t mpc_xy_cruise;
 		param_t fw_motors_off;
+		param_t vtol_front_trans_dur;
 	} _params_handles{};
 
 	/* for multicopters it is usual to have a non-zero idle speed of the engines
@@ -237,6 +239,8 @@ private:
 	void 		fill_fw_att_rates_sp();
 
 	void		handle_command();
+	void 		publish_rates_sp();
+	void    	do_poll();
 };
 
 #endif

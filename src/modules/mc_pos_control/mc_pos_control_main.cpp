@@ -491,6 +491,11 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	/* set trigger time for manual direction change detection */
 	_manual_direction_change_hysteresis.set_hysteresis_time_from(false, DIRECTION_CHANGE_TRIGGER_TIME_US);
 
+	_params.pos_c.zero();
+	_params.pos_b.zero();
+	_params.e_pi_x.zero();
+	_params.e_pi_y.zero();
+
 	_pos.zero();
 	_pos_sp.zero();
 	_vel.zero();
@@ -507,8 +512,18 @@ MulticopterPositionControl::MulticopterPositionControl() :
 
 	_thrust_int.zero();
 
+	_params_handles.x_pos_b		= param_find("MPC_X_POS_B");
+	_params_handles.y_pos_b		= param_find("MPC_Y_POS_B");
+	_params_handles.z_pos_b		= param_find("MPC_Z_POS_B");
+
+	_params_handles.thr_tether	= param_find("MPC_THR_TETHER");
+	_params_handles.pitch_hvr	= param_find("MPC_PITCH_HVR");
+	_params_handles.tet_pos_ctl	= param_find("MPC_TET_POS_CTL");
+
 	/* fetch initial parameter values */
 	parameters_update(true);
+
+	// printf("INITX bx: %.2f, by: %.2f, bz: %.2f\n", (double) _params.pos_b(0), (double) _params.pos_b(1), (double) _params.pos_b(2));
 }
 
 MulticopterPositionControl::~MulticopterPositionControl()
@@ -561,6 +576,20 @@ MulticopterPositionControl::parameters_update(bool force)
 	if (updated || force) {
 		ModuleParams::updateParams();
 		SuperBlock::updateParams();
+
+    /* KiteX: tethered flying, manual and offboard */
+		param_get(_params_handles.thr_tether, &_params.thr_tether);
+		param_get(_params_handles.pitch_hvr, &_params.pitch_hvr);
+		param_get(_params_handles.tet_pos_ctl, &_params.tet_pos_ctl);
+
+		float v;
+		uint32_t v_i;
+		param_get(_params_handles.x_pos_b, &v); // kitex
+		_params.pos_b(0) = v;
+		param_get(_params_handles.y_pos_b, &v);
+		_params.pos_b(1) = v;
+		param_get(_params_handles.z_pos_b, &v);
+		_params.pos_b(2) = v;
 
 		_flight_tasks.handleParameterUpdate();
 
