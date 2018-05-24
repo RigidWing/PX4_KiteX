@@ -131,7 +131,7 @@ MulticopterAttitudeControl::MulticopterAttitudeControl() :
 	}
 
 	parameters_updated();
-	printf("START MC ATT CONTROL");
+	printf("START MC ATT CONTROL"); // Kitex
 }
 
 void

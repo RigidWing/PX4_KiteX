@@ -47,6 +47,8 @@
 
 #pragma once
 
+#define _USE_MATH_DEFINES // Kitex
+
 /* Constraints based on mode:
  * Eventually this structure should be part of local position message
  */

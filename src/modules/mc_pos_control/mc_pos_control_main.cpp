@@ -201,6 +201,12 @@ private:
 		(ParamFloat<px4::params::MPC_THR_MIN>) _thr_min,
 		(ParamFloat<px4::params::MPC_THR_MAX>) _thr_max,
 		(ParamFloat<px4::params::MPC_THR_HOVER>) _thr_hover,
+		(ParamFloat<px4::params::MPC_X_POS_B>) _x_pos_b,		// Kitex
+		(ParamFloat<px4::params::MPC_Y_POS_B>) _y_pos_b,		// Kitex
+		(ParamFloat<px4::params::MPC_Z_POS_B>) _z_pos_b,		// Kitex
+		(ParamFloat<px4::params::MPC_THR_TETHER>) _thr_tether,	// Kitex
+		(ParamFloat<px4::params::MPC_PITCH_HVR>) _pitch_hvr,	// Kitex
+		(ParamFloat<px4::params::MPC_TET_POS_CTL>) _tet_pos_ctl,// Kitex
 		(ParamFloat<px4::params::MPC_Z_P>) _z_p,
 		(ParamFloat<px4::params::MPC_Z_VEL_P>) _z_vel_p,
 		(ParamFloat<px4::params::MPC_Z_VEL_I>) _z_vel_i,
@@ -256,6 +262,10 @@ private:
 	manual_stick_input
 	_user_intention_z; /**< defines what the user intends to do derived from the stick input in z direciton */
 
+	matrix::Vector3f _pos_c; // Kitex
+	matrix::Vector3f _e_pi_x;// Kitex
+	matrix::Vector3f _e_pi_y;// Kitex
+	matrix::Vector3f _pos_b; // Kitex	
 	matrix::Vector3f _pos_p;
 	matrix::Vector3f _vel_p;
 	matrix::Vector3f _vel_i;
@@ -463,6 +473,10 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	_filter_manual_roll(50.0f, 10.0f),
 	_user_intention_xy(brake),
 	_user_intention_z(brake),
+	_pos_c(0.0f, 0.0f, 0.0f),// Kitex
+	_e_pi_x(0.0f, 0.0f, 0.0f),// Kitex
+	_e_pi_y(0.0f, 0.0f, 0.0f),// Kitex
+	_pos_b(0.0f, 0.0f, 0.0f),// Kitex
 	_ref_alt(0.0f),
 	_ref_alt_is_global(false),
 	_ref_timestamp(0),
@@ -491,11 +505,6 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	/* set trigger time for manual direction change detection */
 	_manual_direction_change_hysteresis.set_hysteresis_time_from(false, DIRECTION_CHANGE_TRIGGER_TIME_US);
 
-	_params.pos_c.zero();
-	_params.pos_b.zero();
-	_params.e_pi_x.zero();
-	_params.e_pi_y.zero();
-
 	_pos.zero();
 	_pos_sp.zero();
 	_vel.zero();
@@ -512,18 +521,8 @@ MulticopterPositionControl::MulticopterPositionControl() :
 
 	_thrust_int.zero();
 
-	_params_handles.x_pos_b		= param_find("MPC_X_POS_B");
-	_params_handles.y_pos_b		= param_find("MPC_Y_POS_B");
-	_params_handles.z_pos_b		= param_find("MPC_Z_POS_B");
-
-	_params_handles.thr_tether	= param_find("MPC_THR_TETHER");
-	_params_handles.pitch_hvr	= param_find("MPC_PITCH_HVR");
-	_params_handles.tet_pos_ctl	= param_find("MPC_TET_POS_CTL");
-
 	/* fetch initial parameter values */
 	parameters_update(true);
-
-	// printf("INITX bx: %.2f, by: %.2f, bz: %.2f\n", (double) _params.pos_b(0), (double) _params.pos_b(1), (double) _params.pos_b(2));
 }
 
 MulticopterPositionControl::~MulticopterPositionControl()
@@ -576,20 +575,6 @@ MulticopterPositionControl::parameters_update(bool force)
 	if (updated || force) {
 		ModuleParams::updateParams();
 		SuperBlock::updateParams();
-
-    /* KiteX: tethered flying, manual and offboard */
-		param_get(_params_handles.thr_tether, &_params.thr_tether);
-		param_get(_params_handles.pitch_hvr, &_params.pitch_hvr);
-		param_get(_params_handles.tet_pos_ctl, &_params.tet_pos_ctl);
-
-		float v;
-		uint32_t v_i;
-		param_get(_params_handles.x_pos_b, &v); // kitex
-		_params.pos_b(0) = v;
-		param_get(_params_handles.y_pos_b, &v);
-		_params.pos_b(1) = v;
-		param_get(_params_handles.z_pos_b, &v);
-		_params.pos_b(2) = v;
 
 		_flight_tasks.handleParameterUpdate();
 
@@ -2379,33 +2364,49 @@ void
 MulticopterPositionControl::calculate_velocity_setpoint()
 {
 	/* run position & altitude controllers, if enabled (otherwise use already computed velocity setpoints) */
-	if (_run_pos_control) {
+	if (_tet_pos_ctl.get() > 0.5f) { // KiteX We are hovering, at the surface of a sphere
 
-		// If for any reason, we get a NaN position setpoint, we better just stay where we are.
-		if (PX4_ISFINITE(_pos_sp(0)) && PX4_ISFINITE(_pos_sp(1))) {
-			_vel_sp(0) = (_pos_sp(0) - _pos(0)) * _pos_p(0);
-			_vel_sp(1) = (_pos_sp(1) - _pos(1)) * _pos_p(1);
+		matrix::Vector3f rp = _pos - _pos_b;
+		matrix::Vector3f rt = _pos_sp - _pos_b;
 
-		} else {
-			_vel_sp(0) = 0.0f;
-			_vel_sp(1) = 0.0f;
-			warn_rate_limited("Caught invalid pos_sp in x and y");
+		float vectorLength = (_pos - _pos_sp).length();
+		matrix::Vector3f velDir = (rp % rt) % rp;
+		matrix::Vector3f s = velDir * vectorLength / velDir.length();
 
+		_vel_sp(0) = s(0) * _pos_p(0);
+		_vel_sp(1) = s(1) * _pos_p(1);
+		_vel_sp(2) = s(2) * _pos_p(2);
+
+	}
+	else {
+		if (_run_pos_control) {
+
+			// If for any reason, we get a NaN position setpoint, we better just stay where we are.
+			if (PX4_ISFINITE(_pos_sp(0)) && PX4_ISFINITE(_pos_sp(1))) {
+				_vel_sp(0) = (_pos_sp(0) - _pos(0)) * _pos_p(0);
+				_vel_sp(1) = (_pos_sp(1) - _pos(1)) * _pos_p(1);
+
+			} else {
+				_vel_sp(0) = 0.0f;
+				_vel_sp(1) = 0.0f;
+				warn_rate_limited("Caught invalid pos_sp in x and y");
+
+			}
 		}
-	}
 
-	/* in auto the setpoint is already limited by the navigator */
-	if (!_control_mode.flag_control_auto_enabled) {
-		limit_altitude();
-	}
+		/* in auto the setpoint is already limited by the navigator */
+		if (!_control_mode.flag_control_auto_enabled) {
+			limit_altitude();
+		}
 
-	if (_run_alt_control) {
-		if (PX4_ISFINITE(_pos_sp(2))) {
-			_vel_sp(2) = (_pos_sp(2) - _pos(2)) * _pos_p(2);
+		if (_run_alt_control) {
+			if (PX4_ISFINITE(_pos_sp(2))) {
+				_vel_sp(2) = (_pos_sp(2) - _pos(2)) * _pos_p(2);
 
-		} else {
-			_vel_sp(2) = 0.0f;
-			warn_rate_limited("Caught invalid pos_sp in z");
+			} else {
+				_vel_sp(2) = 0.0f;
+				warn_rate_limited("Caught invalid pos_sp in z");
+			}
 		}
 	}
 
@@ -2859,6 +2860,13 @@ MulticopterPositionControl::generate_attitude_setpoint()
 		_att_sp.roll_body = euler_sp(0);
 		_att_sp.pitch_body = euler_sp(1);
 		_att_sp.yaw_body += euler_sp(2);
+		
+		/* Enable static pitch control when (tethered hover) AUX1 is enabled (above 0) by KiteX */
+		if (_manual.aux1 > 0.0f) {
+			_att_sp.pitch_body = _pitch_hvr.get();
+		} else {
+			_att_sp.pitch_body = -_manual.x * _man_tilt_max;
+		}
 
 		/* only if we're a VTOL modify roll/pitch */
 		if (_vehicle_status.is_vtol) {
@@ -3047,6 +3055,12 @@ MulticopterPositionControl::task_main()
 			_reset_pos_sp = true;
 			_reset_yaw_sp = true;
 			_vel_sp_prev = _vel;
+		}
+
+		/* KiteX reset yaw setpoint while AUX1 (tethered hover) is high
+		for manual tetheted flight */
+		if (_manual.aux1 > 0.0f) {
+			_reset_yaw_sp = true;
 		}
 
 		if (!_in_smooth_takeoff && _vehicle_land_detected.landed && _control_mode.flag_armed &&

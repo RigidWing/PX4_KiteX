@@ -83,7 +83,7 @@ enum mode {
 
 enum vtol_type {
 	TAILSITTER = 0,
-	KITE,
+	KITE, // Kitex
 	TILTROTOR,
 	STANDARD
 };
@@ -187,6 +187,9 @@ protected:
 	struct actuator_controls_s			*_actuators_fw_in;			//actuator controls from fw_att_control
 	struct vehicle_local_position_s			*_local_pos;
 	struct vehicle_local_position_setpoint_s	*_local_pos_sp;
+	struct manual_control_setpoint_s	*_manual_control_sp;	// Kitex
+	struct vehicle_rates_setpoint_s		*_mc_virtual_v_rates_sp;	// Kitex
+	struct vehicle_rates_setpoint_s		*_fw_virtual_v_rates_sp;	// Kitex
 	struct airspeed_s 				*_airspeed;					// airspeed
 	struct tecs_status_s				*_tecs_status;
 	struct vehicle_land_detected_s			*_land_detected;

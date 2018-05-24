@@ -753,13 +753,7 @@ void Replay::run()
 
 	//we update the timestamps from the file by a constant offset to match
 	//the current replay time
-	const uint64_t timestamp_offset = _file_start_time - _replay_start_time - 2000000;
-
-	printf("_replay_start_time: %llu\n", _replay_start_time);
-	printf("_file_start_time: %llu\n", _file_start_time);
-	printf("timestamp_offset: %llu\n", timestamp_offset);
-
-
+	const uint64_t timestamp_offset = _replay_start_time - _file_start_time;
 	uint32_t nr_published_messages = 0;
 	streampos last_additional_message_pos = _data_section_start;
 
@@ -767,14 +761,14 @@ void Replay::run()
 
 		//Find the next message to publish. Messages from different subscriptions don't need
 		//to be in chronological order, so we need to check all subscriptions
-		uint64_t next_file_time = 1;
+		uint64_t next_file_time = 0;
 		int next_msg_id = -1;
 
 		for (size_t i = 0; i < _subscriptions.size(); ++i) {
 			const Subscription &subscription = _subscriptions[i];
 
 			if (subscription.orb_meta && !subscription.ignored) {
-				if (next_file_time == 1 || subscription.next_timestamp < next_file_time) {
+				if (next_file_time == 0 || subscription.next_timestamp < next_file_time) {
 					next_msg_id = (int)i;
 					next_file_time = subscription.next_timestamp;
 				}
@@ -792,17 +786,6 @@ void Replay::run()
 			nextDataMessage(replay_file, sub, next_msg_id);
 			continue;
 		}
-
-		//wait if necessary
-		uint64_t publish_timestamp = next_file_time - timestamp_offset;
-
-		uint64_t cur_time = hrt_absolute_time();
-		if (publish_timestamp > 1000000000000 ) { // fix error for first log message with happen before
-			// publish_timestamp = cur_time;
-			nextDataMessage(replay_file, sub, next_msg_id);
-			continue;
-		}
-		// printf("next_file_time: %llu, messageid: %i \n", next_file_time, next_msg_id);
 
 
 		//handle additional messages between last and next published data

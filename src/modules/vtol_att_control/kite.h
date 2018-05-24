@@ -42,7 +42,7 @@
 #define KITE_H
 
 #include "vtol_type.h"
-#include <systemlib/param/param.h>
+#include <parameters/param.h>
 #include <drivers/drv_hrt.h>
 
 class Kite : public VtolType

@@ -39,7 +39,7 @@
  */
 
 /**
-* Angles to C. Phi is relative to the X-axis, theta to the XY-plane, positive for negative z.
+* KITEX Angles to C. Phi is relative to the X-axis, theta to the XY-plane, positive for negative z.
 * *
 * @group Multicopter Position Control
 */
@@ -48,7 +48,7 @@ PARAM_DEFINE_FLOAT(MPC_PHI_C, 0.0f);
 PARAM_DEFINE_FLOAT(MPC_THETA_C, 0.0f);
 
 /**
- * Turning radius in the Pi-plane
+ * KITEX Turning radius in the Pi-plane
  * *
  * @group Multicopter Position Control
  */
@@ -56,7 +56,7 @@ PARAM_DEFINE_FLOAT(MPC_THETA_C, 0.0f);
 PARAM_DEFINE_FLOAT(MPC_LOOP_TURN_R, 0.0f);
 
 /**
- * Length of the tether
+ * KITEX Length of the tether
  * *
  * @group Multicopter Position Control
  */
@@ -64,7 +64,7 @@ PARAM_DEFINE_FLOAT(MPC_LOOP_TURN_R, 0.0f);
 PARAM_DEFINE_FLOAT(MPC_TETHER_LEN, 100.0f);
 
 /**
- * Coordinates of the position of B, the tether point
+ * KITEX Coordinates of the position of B, the tether point
  * *
  * @group Multicopter Position Control
  */
@@ -74,7 +74,7 @@ PARAM_DEFINE_FLOAT(MPC_Y_POS_B, 0.0f);
 PARAM_DEFINE_FLOAT(MPC_Z_POS_B, 0.0f);
 
 /**
- * Pitch Angle Hover
+ * KITEX Pitch Angle Hover
  *
  * The Pitch Angle while hovering with the tether
  * stretched while in manual mode.
@@ -90,7 +90,7 @@ PARAM_DEFINE_FLOAT(MPC_Z_POS_B, 0.0f);
 PARAM_DEFINE_FLOAT(MPC_PITCH_HVR, -0.174f);
 
 /**
- * Tether Hover thrust
+ * KITEX Tether Hover thrust
  *
  * Thrust in the direction from ground to the kite along the tether.
  * This value is relative to the hover thrust.
@@ -105,7 +105,7 @@ PARAM_DEFINE_FLOAT(MPC_PITCH_HVR, -0.174f);
 PARAM_DEFINE_FLOAT(MPC_THR_TETHER, 0.2f);
 
 /**
- * Enable Tethered Position Control
+ * KITEX Enable Tethered Position Control
  *
  * @min 0
  * @max 1

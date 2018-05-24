@@ -73,7 +73,7 @@ PARAM_DEFINE_INT32(VT_IDLE_PWM_MC, 900);
  */
 PARAM_DEFINE_INT32(VT_FW_PERM_STAB, 0);
 
-/**
+/** Kitex
  * VTOL Type (Tailsitter=0, Kite=1, Tiltrotor=2, Standard=3)
  *
  * @value 0 Tailsitter

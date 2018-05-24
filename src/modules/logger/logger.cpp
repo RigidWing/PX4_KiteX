@@ -683,7 +683,7 @@ void Logger::add_estimator_replay_topics()
 	add_topic("vehicle_air_data");
 	add_topic("vehicle_gps_position");
 	add_topic("vehicle_land_detected");
-	add_topic("fw_turning", 100);
+	add_topic("fw_turning", 100); // Kitex
 	add_topic("vehicle_magnetometer");
 	add_topic("vehicle_status");
 	add_topic("vehicle_vision_attitude");

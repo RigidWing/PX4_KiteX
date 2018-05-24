@@ -435,30 +435,25 @@ VtolAttitudeControl::abort_front_transition(const char *reason)
 	}
 }
 
-/**
+/** Kitex
 * Do poll
 */
 void
 VtolAttitudeControl::do_poll(){
-	mc_virtual_att_sp_poll();
-	fw_virtual_att_sp_poll();
+	land_detected_poll();
+	tecs_status_poll();
+	vehicle_attitude_poll();  //Check for attitude updates.
+	vehicle_cmd_poll();
 	vehicle_control_mode_poll();	//Check for changes in vehicle control mode.
 	vehicle_manual_poll();			//Check for changes in manual inputs.
-	arming_status_poll();			//Check for arming status updates.
-	vehicle_attitude_setpoint_poll();//Check for changes in attitude set points
-	vehicle_attitude_poll();		//Check for changes in attitude
-	actuator_controls_mc_poll();	//Check for changes in mc_attitude_control output
 	actuator_controls_fw_poll();	//Check for changes in fw_attitude_control output
-	vehicle_rates_sp_mc_poll();
-	vehicle_rates_sp_fw_poll();
-	parameters_update_poll();
-	vehicle_local_pos_poll();			// Check for new sensor values
-	vehicle_airspeed_poll();
-	vehicle_battery_poll();
-	vehicle_cmd_poll();
-	tecs_status_poll();
-	land_detected_poll();
-
+	actuator_controls_mc_poll();	//Check for changes in mc_attitude_control output
+	fw_virtual_att_sp_poll();
+	mc_virtual_att_sp_poll();
+	pos_sp_triplet_poll();		// Check for changes in position setpoint values
+	vehicle_airspeed_poll();		// Check for changes in airspeed
+	vehicle_local_pos_poll();		// Check for changes in sensor values
+	vehicle_local_pos_sp_poll();		// Check for changes in setpoint values
 }
 
 
@@ -602,16 +597,6 @@ void VtolAttitudeControl::fill_fw_att_rates_sp()
 	}
 }
 
-void VtolAttitudeControl::publish_rates_sp()
-{
-	// publish the attitude rates setpoint
-	if (_v_rates_sp_pub != nullptr) {
-		orb_publish(ORB_ID(vehicle_rates_setpoint), _v_rates_sp_pub, &_v_rates_sp);
-	} else { 		/* advertise and publish */
-		_v_rates_sp_pub = orb_advertise(ORB_ID(vehicle_rates_setpoint), &_v_rates_sp);
-	}
-}
-
 void
 VtolAttitudeControl::task_main_trampoline(int argc, char *argv[])
 {
@@ -694,7 +679,7 @@ void VtolAttitudeControl::task_main()
 			usleep(100000);
 			continue;
 		}
-
+		// Kitex: moved all polling to one function
 		//vehicle_control_mode_poll();
 		//vehicle_manual_poll();
 		//vehicle_attitude_poll();
@@ -767,9 +752,6 @@ void VtolAttitudeControl::task_main()
 			fill_mc_att_rates_sp();
 		}
 
-		/* Publish */
-		publish_att_sp();
-		publish_rates_sp();
 		_vtol_type->fill_actuator_outputs();
 
 		/* Only publish if the proper mode(s) are enabled */

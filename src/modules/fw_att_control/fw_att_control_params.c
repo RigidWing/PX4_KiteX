@@ -41,7 +41,7 @@
  */
 
 
-// ALSO DEFINED IN mc_pos_control_main
+// KITEX: ALSO DEFINED IN mc_pos_control_main
  // /**
  // * Angles to C. Phi is relative to the X-axis, theta to the XY-plane, positive for negative z.
  // * *

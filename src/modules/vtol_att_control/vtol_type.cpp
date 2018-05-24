@@ -62,6 +62,9 @@ VtolType::VtolType(VtolAttitudeControl *att_controller) :
 	_actuators_fw_in = _attc->get_actuators_fw_in();
 	_local_pos = _attc->get_local_pos();
 	_local_pos_sp = _attc->get_local_pos_sp();
+	_manual_control_sp = _attc->get_manual_control_sp(); // Kitex
+	_mc_virtual_v_rates_sp = _attc->get_mc_virtual_v_rates_sp(); // Kitex
+	_fw_virtual_v_rates_sp = _attc->get_fw_virtual_v_rates_sp(); // Kitex
 	_airspeed = _attc->get_airspeed();
 	_tecs_status = _attc->get_tecs_status();
 	_land_detected = _attc->get_land_detected();
