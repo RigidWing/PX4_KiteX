@@ -1,0 +1,16 @@
+Mixer for KiteX V4 with x motor configuration, elevator and rudder
+===========================================================
+
+This file defines a single mixer for the kiteX V4 prototype with motors in X configuration
+and one servo for each the rudder and elevator.
+are mixed 100%.
+
+R: 4kitex 10000 10000 10000 0
+
+M: 1
+O:      10000  10000      0 -8000  8000
+S: 1 0  10000  10000      0 -10000  10000
+
+M: 1
+O:      10000  10000      0 -10000  10000
+S: 1 1  10000  10000      0 -10000  10000
