@@ -1,4 +1,5 @@
 # KiteX PX4 Firmware #
+##### master  [![Master Build Status](https://travis-ci.org/RigidWing/PX4_KiteX.svg?branch=master_kiteX_adapted)](https://travis-ci.org/RigidWing/PX4_KiteX)
 
 ## Main modifications ##
 
