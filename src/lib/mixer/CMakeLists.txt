@@ -44,6 +44,7 @@ set(geometry_files
 	octa_x.toml
 	quad_deadcat.toml
 	quad_h.toml
+	quad_kitex.toml
 	quad_plus.toml
 	quad_s250aq.toml
 	quad_vtail.toml
