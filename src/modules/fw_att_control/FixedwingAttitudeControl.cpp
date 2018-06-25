@@ -236,13 +236,6 @@ FixedwingAttitudeControl::parameters_update()
 
 	param_get(_parameter_handles.bat_scale_en, &_parameters.bat_scale_en);
 
-	/* KiteX calculate C - not really needed */
-	//		float d	= calculate_d(_parameters.tether_len, _parameters.turning_radius);
-	//		_parameters.pos_c = calculate_vector(_parameters.phiC, _parameters.thetaC, d) + _parameters.pos_b;
-
-	//		_parameters.e_pi_x = calculate_e_pi_x(_parameters.phiC, _parameters.thetaC);
-	//		_parameters.e_pi_y = calculate_e_pi_y(_parameters.phiC, _parameters.thetaC);
-
 	// KiteX: Update projection plane and path
 	update_pi(_parameters.phiC, _parameters.thetaC);
 	update_pi_path(_parameters.turning_radius);
@@ -686,30 +679,30 @@ void FixedwingAttitudeControl::run()
 				_flag_control_attitude_enabled_last = _vcontrol_mode.flag_control_attitude_enabled;
 
 				/* bi-linear interpolation over airspeed for actuator trim scheduling */
-				float trim_roll = _parameters.trim_roll;
-				float trim_pitch = _parameters.trim_pitch;
-				float trim_yaw = _parameters.trim_yaw;
+				// float trim_roll = _parameters.trim_roll;
+				// float trim_pitch = _parameters.trim_pitch;
+				// float trim_yaw = _parameters.trim_yaw;
 
-				if (airspeed < _parameters.airspeed_trim) {
-					trim_roll += math::gradual(airspeed, _parameters.airspeed_min, _parameters.airspeed_trim, _parameters.dtrim_roll_vmin,
-								   0.0f);
-					trim_pitch += math::gradual(airspeed, _parameters.airspeed_min, _parameters.airspeed_trim, _parameters.dtrim_pitch_vmin,
-								    0.0f);
-					trim_yaw += math::gradual(airspeed, _parameters.airspeed_min, _parameters.airspeed_trim, _parameters.dtrim_yaw_vmin,
-								  0.0f);
-
-				} else {
-					trim_roll += math::gradual(airspeed, _parameters.airspeed_trim, _parameters.airspeed_max, 0.0f,
-								   _parameters.dtrim_roll_vmax);
-					trim_pitch += math::gradual(airspeed, _parameters.airspeed_trim, _parameters.airspeed_max, 0.0f,
-								    _parameters.dtrim_pitch_vmax);
-					trim_yaw += math::gradual(airspeed, _parameters.airspeed_trim, _parameters.airspeed_max, 0.0f,
-								  _parameters.dtrim_yaw_vmax);
-				}
-
-				/* add trim increment if flaps are deployed  */
-				trim_roll += _flaps_applied * _parameters.dtrim_roll_flaps;
-				trim_pitch += _flaps_applied * _parameters.dtrim_pitch_flaps;
+				// if (airspeed < _parameters.airspeed_trim) {
+				// 	trim_roll += math::gradual(airspeed, _parameters.airspeed_min, _parameters.airspeed_trim, _parameters.dtrim_roll_vmin,
+				// 				   0.0f);
+				// 	trim_pitch += math::gradual(airspeed, _parameters.airspeed_min, _parameters.airspeed_trim, _parameters.dtrim_pitch_vmin,
+				// 				    0.0f);
+				// 	trim_yaw += math::gradual(airspeed, _parameters.airspeed_min, _parameters.airspeed_trim, _parameters.dtrim_yaw_vmin,
+				// 				  0.0f);
+				//
+				// } else {
+				// 	trim_roll += math::gradual(airspeed, _parameters.airspeed_trim, _parameters.airspeed_max, 0.0f,
+				// 				   _parameters.dtrim_roll_vmax); !!! KITEX NOTE RETURNS NAN if fw_pos_control_l1 is not included! because airspeed, _parameters.airspeed_trim, _parameters.airspeed_max = 0
+				// 	trim_pitch += math::gradual(airspeed, _parameters.airspeed_trim, _parameters.airspeed_max, 0.0f,
+				// 				    _parameters.dtrim_pitch_vmax);
+				// 	trim_yaw += math::gradual(airspeed, _parameters.airspeed_trim, _parameters.airspeed_max, 0.0f,
+				// 				  _parameters.dtrim_yaw_vmax);
+				// }
+				//
+				// /* add trim increment if flaps are deployed  */
+				// trim_roll += _flaps_applied * _parameters.dtrim_roll_flaps;
+				// trim_pitch += _flaps_applied * _parameters.dtrim_pitch_flaps;
 
 				// Kitex comment out
 				///* Run attitude controllers */
@@ -818,15 +811,13 @@ void FixedwingAttitudeControl::run()
 				//_yaw_ctrl.set_bodyrate_setpoint(_rates_sp.yaw);
 
 				float roll_u = _roll_ctrl.control_bodyrate(control_input);
-				_actuators.control[actuator_controls_s::INDEX_ROLL] = (PX4_ISFINITE(roll_u)) ? roll_u + trim_roll : trim_roll;
+				_actuators.control[actuator_controls_s::INDEX_ROLL] = (PX4_ISFINITE(roll_u)) ? roll_u : 0.0f;
 
 				//float pitch_u = _pitch_ctrl.control_bodyrate(control_input);
-				float pitch_u = 0; // Kitex
-				_actuators.control[actuator_controls_s::INDEX_PITCH] = (PX4_ISFINITE(pitch_u)) ? pitch_u + trim_pitch : trim_pitch;
+				_actuators.control[actuator_controls_s::INDEX_PITCH] = 0.0f; // (PX4_ISFINITE(pitch_u)) ? pitch_u + trim_pitch : trim_pitch; // kitex
 
 				//float yaw_u = _yaw_ctrl.control_bodyrate(control_input);
-				float yaw_u = 0; // Kitex
-				_actuators.control[actuator_controls_s::INDEX_YAW] = (PX4_ISFINITE(yaw_u)) ? yaw_u + trim_yaw : trim_yaw;
+				_actuators.control[actuator_controls_s::INDEX_YAW] = 0.0f; //(PX4_ISFINITE(yaw_u)) ? yaw_u + trim_yaw : trim_yaw; // kitex
 
 				//_actuators.control[actuator_controls_s::INDEX_THROTTLE] = PX4_ISFINITE(_rates_sp.thrust) ? _rates_sp.thrust : 0.0f;
 				_actuators.control[actuator_controls_s::INDEX_THROTTLE] = _manual.z;

@@ -66,8 +66,6 @@
 using matrix::Eulerf;
 using matrix::Quatf;
 
-#define _USE_MATH_DEFINES	// Kitex
-
 using uORB::Subscription;
 
 class FixedwingAttitudeControl final : public ModuleBase<FixedwingAttitudeControl>
